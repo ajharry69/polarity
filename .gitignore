@@ -4,5 +4,6 @@
 **.iws
 **.pyc
 **.env
+**.sqlite3
 .venv/
 .idea/
