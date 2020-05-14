@@ -5,6 +5,11 @@
     <title>{{ question.question_text }}</title>
 </head>
 <body>
-{{ question }}
+<h1>{{ question.question_text }}</h1>
+<ul>
+    {% for c in question.choice_set.all %}
+        <li>{{ c.choice_text }}</li>
+    {% endfor %}
+</ul>
 </body>
 </html>
