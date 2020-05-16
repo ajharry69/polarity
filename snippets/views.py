@@ -44,6 +44,9 @@ class SnippetViewSet(viewsets.ModelViewSet):
 
 @api_view(['GET'])
 def api_root(request, format=None):
+    """
+    Not necessary if `ViewSet`(s) are being used! `ViewSet` registration by `Router` does it's work
+    """
     from rest_framework.reverse import reverse
     return Response(
         {
