@@ -7,5 +7,5 @@ from quickstart.urls import quickstart_router
 urlpatterns = [
     path('quickstart/', include(quickstart_router.urls)),
     path('snippets/', include('snippets.urls')),
-    path('admin-auth/', include('rest_framework.urls', namespace='rest_framework')),  # must be at the end!
+    path('admin-auth/', include('rest_framework.urls', namespace='rest_framework')),  # should be at the end!
 ]
