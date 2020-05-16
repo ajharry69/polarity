@@ -1,5 +1,5 @@
 from rest_framework import renderers, viewsets
-from rest_framework.decorators import api_view, action
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from snippets.serializers import *
@@ -40,17 +40,3 @@ class SnippetViewSet(viewsets.ModelViewSet):
         # The create() method of our serializer will now be passed an additional 'owner' field,
         # along with the validated data from the request
         serializer.save(owner=self.request.user)
-
-
-@api_view(['GET'])
-def api_root(request, format=None):
-    """
-    Not necessary if `ViewSet`(s) are being used! `ViewSet` registration by `Router` does it's work
-    """
-    from rest_framework.reverse import reverse
-    return Response(
-        {
-            'users': reverse('user-list', request=request, format=format),
-            'snippets': reverse('snippet-list', request=request, format=format),
-        }
-    )

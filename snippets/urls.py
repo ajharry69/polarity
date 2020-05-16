@@ -3,10 +3,11 @@ from rest_framework import routers
 
 from snippets import views
 
-snippet_router = routers.DefaultRouter()
-snippet_router.register(r'snippets', views.SnippetViewSet)
-snippet_router.register(r'users', views.UserViewSet)
+router = routers.DefaultRouter()
+router.register(r'users', views.UserViewSet)
+router.register(r'snippets', views.SnippetViewSet)
 
+app_name = 'snippets'
 urlpatterns = [
-    path('', include(snippet_router.urls))
+    path('', include(router.urls), name='index')
 ]

@@ -1,7 +1,13 @@
+from django.urls import path, include
 from rest_framework import routers
 
 from quickstart import views
 
-quickstart_router = routers.DefaultRouter()
-quickstart_router.register(r'users', views.UserViewSet)
-quickstart_router.register(r'groups', views.GroupViewSet)
+router = routers.DefaultRouter()
+router.register(r'users', views.UserViewSet)
+router.register(r'groups', views.GroupViewSet)
+
+app_name = 'quickstart'
+urlpatterns = [
+    path('', include(router.urls))
+]
