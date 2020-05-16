@@ -2,6 +2,6 @@ from rest_framework import routers
 
 from quickstart import views
 
-router = routers.DefaultRouter()
-router.register(r'users', views.UserViewSet)
-router.register(r'groups', views.GroupViewSet)
+quickstart_router = routers.DefaultRouter()
+quickstart_router.register(r'users', views.UserViewSet)
+quickstart_router.register(r'groups', views.GroupViewSet)
