@@ -22,8 +22,8 @@ from quickstart.urls import router
 # Additionally, we include login URLs for the browsable API.
 urlpatterns = [
     path('', include(router.urls)),
-    path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
     path('snippets/', include('snippets.urls')),
     path('polls/', include('polls.urls')),
     path('admin/', admin.site.urls),
+    path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),  # must be at the end!
 ]
