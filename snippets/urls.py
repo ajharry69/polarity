@@ -9,5 +9,5 @@ router.register(r'snippets', views.SnippetViewSet)
 
 app_name = 'snippets'
 urlpatterns = [
-    path('', include(router.urls), name='index')
+    path('', include(router.urls))
 ]

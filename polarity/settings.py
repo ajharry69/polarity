@@ -39,7 +39,8 @@ INSTALLED_APPS = [
     'api.apps.ApiConfig',
     'quickstart.apps.QuickstartConfig',
     'snippets.apps.SnippetsConfig',
-    'rest_framework'
+    'rest_framework',
+    'django_extensions',
 ]
 
 MIDDLEWARE = [

@@ -7,7 +7,7 @@ def api_root(request, format=None):
     from rest_framework.response import Response
     return Response(
         {
-            'quickstart': reverse('quickstart:index', request=request, format=format),
-            'snippets': reverse('snippets:index', request=request, format=format),
+            'quickstart': reverse('quickstart:', request=request, format=format),
+            'snippets': reverse('snippets', request=request, format=format),
         }
     )

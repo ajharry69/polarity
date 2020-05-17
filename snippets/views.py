@@ -25,11 +25,6 @@ class SnippetViewSet(viewsets.ModelViewSet):
     serializer_class = SnippetSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
 
-    @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
-    def highlight(self, request, *args, **kwargs):
-        snippet = self.get_object()
-        return Response(snippet.highlighted)
-
     def perform_create(self, serializer):
         """
         Allow for the modification of how an instance save is managed, and handle any information
@@ -40,3 +35,8 @@ class SnippetViewSet(viewsets.ModelViewSet):
         # The create() method of our serializer will now be passed an additional 'owner' field,
         # along with the validated data from the request
         serializer.save(owner=self.request.user)
+
+    @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
+    def highlight(self, request, *args, **kwargs):
+        snippet = self.get_object()
+        return Response(snippet.highlighted)
