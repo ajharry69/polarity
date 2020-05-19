@@ -110,10 +110,6 @@ REST_FRAMEWORK = {
 
 XENTLY_AUTH_API = {
     'DEFAULT_JWT_KEY': SECRET_KEY,
-    'JWT_ENC_HEADERS': {
-        "alg": "ECDH-ES",
-        "enc": "A256GCM",
-    }
 }
 
 # Internationalization

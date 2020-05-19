@@ -233,11 +233,15 @@ class Token(TokenKey):
                         algs=self.ALLOWED_SIGNING_ALGORITHMS)
         token.make_signed_token(key=self.private_signing_key)
         self.normal = token.serialize()
+        header = {
+            'alg': "ECDH-ES",
+            'enc': "A256GCM",
+        }
+        # header = settings.XENTLY_AUTH_API.get('JWT_ENC_HEADERS', {
+        #     "alg": "A256KW",
+        #     "enc": "A256CBC-HS512",
+        # })
         # encrypted token
-        header = settings.XENTLY_AUTH_API.get('JWT_ENC_HEADERS', {
-            "alg": "A256KW",
-            "enc": "A256CBC-HS512",
-        })
         e_token = jwt.JWT(header=header, claims=self.normal)
         e_token.make_encrypted_token(key=self.encryption_key)
         self.encrypted = e_token.serialize()
