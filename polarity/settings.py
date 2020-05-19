@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'snippets.apps.SnippetsConfig',
     'rest_framework',
     'django_extensions',
+    'xauth.apps.XauthConfig'
 ]
 
 MIDDLEWARE = [
@@ -105,6 +106,14 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10
+}
+
+XENTLY_AUTH_API = {
+    'DEFAULT_JWT_KEY': SECRET_KEY,
+    'JWT_ENC_HEADERS': {
+        "alg": "ECDH-ES",
+        "enc": "A256GCM",
+    }
 }
 
 # Internationalization
