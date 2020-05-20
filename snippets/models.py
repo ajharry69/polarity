@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from pygments.lexers import get_all_lexers, get_lexer_by_name
 from pygments.styles import get_all_styles
@@ -9,7 +10,7 @@ STYLE_CHOICES = sorted([(item, item) for item in get_all_styles()])
 
 class Snippet(models.Model):
     # related name is used in serializers to render Snippet(s) belonging to user
-    owner = models.ForeignKey('auth.User', related_name='snippets', on_delete=models.CASCADE)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='snippets', on_delete=models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
     title = models.CharField(max_length=200, blank=True, default='')
     code = models.TextField()

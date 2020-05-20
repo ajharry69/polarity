@@ -1,8 +1,96 @@
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
+from xauth.models import User
 from xauth.utils.token import *
+
+
+class UserTestCase(APITestCase):
+    def test_get_full_name_returns_username_if_neither_names_are_provided(self):
+        """
+        Return username if it's provided and neither types of names are provided
+        """
+        user = User(username='username')
+        self.assertEqual(user.get_full_name(), user.username)
+
+    def test_get_full_name_returns_names_in_expected_order(self):
+        """
+        Expected order {surname} {first-name} {last-name}
+        """
+        s_name, f_name, l_name = ('Sur', 'First', 'Last',)
+        user = User(username='username', first_name=f_name, last_name=l_name, surname=s_name)
+        self.assertEqual(user.get_full_name(), f'{s_name} {f_name} {l_name}')
+
+    def test_get_full_name_returns_names_with_first_character_of_every_name_capitalized(self):
+        s_name, f_name, l_name = ('Sur', 'first', 'Last',)
+        user = User(username='username', first_name=f_name, last_name=l_name, surname=s_name)
+        self.assertEqual(user.get_full_name(), f'{s_name} First {l_name}')
+
+    def test_get_full_name_returns_removes_any_spaces_at_the_start_or_end_of_every_name(self):
+        s_name, f_name, l_name = ('Sur ', ' first', 'Last',)
+        user = User(username='username', first_name=f_name, last_name=l_name, surname=s_name)
+        self.assertEqual(user.get_full_name(), f'Sur First {l_name}')
+
+    def test_get_short_name_returns_first_word_in_get_full_name(self):
+        s_name, f_name, l_name = ('Sur', 'first', 'Last',)
+        user = User(username='username', first_name=f_name, last_name=l_name, surname=s_name)
+        self.assertEqual(user.get_short_name(), s_name)
+
+    def test_get_short_name_returns_username_if_no_name_is_provided(self):
+        user = User(username='username', )
+        self.assertEqual(user.get_short_name(), user.username)
+
+    def test_get_full_name_returns_None_if_neither_names_nor_username_is_provided(self):
+        user = User()
+        self.assertIsNone(user.get_full_name())
+
+    def test_get_short_name_returns_None_if_neither_names_nor_username_is_provided(self):
+        user = User()
+        self.assertIsNone(user.get_short_name())
+
+    def test_creating_user_without_username_uses_email_as_username(self):
+        email = 'user@mail-domain.com'
+        user = get_user_model().objects.create_user(email=email)
+        self.assertEqual(user.username, email)
+
+    def test_creating_user_with_username_does_not_use_email(self):
+        email = 'user@mail-domain.com'
+        username = 'user1'
+        user = get_user_model().objects.create_user(email=email, username=username)
+        self.assertEqual(user.username, username)
+        self.assertEqual(user.email, email)
+
+    def test_creating_user_without_manager_methods_works(self):
+        """
+        Creating user with Django's .create method works same as Managers.create_user
+        """
+        email = 'user@mail-domain.com'
+        user = get_user_model().objects.create(email=email)
+        user1 = User(email=f'user.{email}')
+        user1.save()
+        user2 = User.objects.create(email=f'user1.{email}')
+        self.assertEqual(user.username, email)
+        self.assertEqual(user.email, email)
+        self.assertEqual(user1.username, f'user.{email}')
+        self.assertEqual(user2.username, f'user1.{email}')
+        self.assertIsNotNone(get_user_model().objects.get_by_natural_key(email))
+
+    def test_check_password_for_created_user_returns_True(self):
+        password = 'password123!'
+        user = get_user_model().objects.create(email='user@mail-domain.com', password=password)
+        user1 = User(email='user1@mail-domain.com', password=password)
+        user1.save()
+
+        self.assertEqual(user.check_password(password), True)
+        self.assertEqual(user1.check_password(password), True)
+        # password hash are never the same even when same password was used
+        self.assertNotEqual(user.password, user1.password)
+
+    def test_creating_user_without_email_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            get_user_model().objects.create_user(email=None)
 
 
 class TokenTest(APITestCase):
