@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.utils.datetime_safe import datetime
+from django.utils.encoding import force_str
 from jwcrypto import jwk, jwt
 from jwcrypto.common import json_decode
 
@@ -163,7 +164,7 @@ class Token(TokenKey):
 
     def __init__(self, payload, activation_date: datetime = None, expiry_period: timedelta = None,
                  payload_key: str = 'payload', signing_algorithm=JWT_SIG_ALG):
-        password = settings.XENTLY_AUTH_API.get('TOKEN_KEY', settings.SECRET_KEY)
+        password = settings.XENTLY_AUTH.get('TOKEN_KEY', force_str(settings.SECRET_KEY))
         super().__init__(password=password, signing_algorithm=signing_algorithm)
         self._normal = None
         self._encrypted = None
@@ -204,7 +205,7 @@ class Token(TokenKey):
         """
         issue_date = datetime.now()
         self.activation_date = issue_date if not self.activation_date else self.activation_date
-        self.expiry_period = settings.XENTLY_AUTH_API.get('TOKEN_EXPIRY', timedelta(
+        self.expiry_period = settings.XENTLY_AUTH.get('TOKEN_EXPIRY', timedelta(
             days=60)) if self.expiry_period is None else self.expiry_period
 
         expiry_date = self.activation_date + self.expiry_period
@@ -262,7 +263,7 @@ class Token(TokenKey):
             'alg': "ECDH-ES",
             'enc': "A256GCM",
         }
-        # header = settings.XENTLY_AUTH_API.get('JWT_ENC_HEADERS', {
+        # header = settings.XENTLY_AUTH.get('JWT_ENC_HEADERS', {
         #     "alg": "A256KW",
         #     "enc": "A256CBC-HS512",
         # })

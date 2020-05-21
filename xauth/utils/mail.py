@@ -28,8 +28,8 @@ class Mail:
         :param recipients: mail `recipient(s)` address(es)
         :param reply_to: email address(es) to send mail base_response to
         """
-        ACCOUNTS_EMAIL = XENTLY_AUTH_API.get('ACCOUNTS_EMAIL', '')
-        REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES = XENTLY_AUTH_API.get('REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES', '')
+        ACCOUNTS_EMAIL = XENTLY_AUTH.get('ACCOUNTS_EMAIL', '')
+        REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES = XENTLY_AUTH.get('REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES', '')
 
         def __init__(self, recipients=None, sender: str = ACCOUNTS_EMAIL,
                      reply_to: list = REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES):
@@ -53,7 +53,7 @@ class Mail:
             # Non-HTML formatted password reset mail
             e = 'p'  # Element
             name = user.get_short_name()
-            app = XENTLY_AUTH_API.get('APP_NAME', '')
+            app = XENTLY_AUTH.get('APP_NAME', '')
 
             plain = f"""Hi {name},
 Please use "{password}"(without the quotes) as temporary password to reset your {app} account password.
@@ -79,7 +79,7 @@ kindly discard or ignore this email.</{e}>"""
             # Non-HTML formatted password reset mail
             e = 'p'  # Element
             name = user.get_short_name()
-            app = XENTLY_AUTH_API.get('APP_NAME', '')
+            app = XENTLY_AUTH.get('APP_NAME', '')
             app_name = f'{app} ' if not welcome else ' '
             welcome_message = f"Hi {name}, welcome to {app}!" if welcome else ""
 

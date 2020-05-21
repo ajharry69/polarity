@@ -20,7 +20,8 @@ def _create_access_log(user):
     AccessLog.objects.create(user=user, sign_in_time=timezone.now())
 
 
-def create_access_and_password_reset_logs(sender, instance, **kwargs):
+def on_user_pre_save(sender, instance, **kwargs):
+    """creates access & password reset log(s)"""
     try:
         user = get_user_model().objects.get(pk=instance.pk)
         last_login = user.last_login
@@ -54,6 +55,6 @@ def on_metadata_pre_save(sender, instance, **kwargs):
     temporary_password = user.get_random_code()
 
 
-pre_save.connect(create_access_and_password_reset_logs, sender=get_user_model(), dispatch_uid='1')
+pre_save.connect(on_user_pre_save, sender=get_user_model(), dispatch_uid='1')
 pre_save.connect(on_metadata_pre_save, sender=Metadata, dispatch_uid='2')
 post_save.connect(on_user_post_save, sender=get_user_model(), dispatch_uid='3')

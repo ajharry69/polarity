@@ -1,9 +1,23 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from django.utils.datetime_safe import datetime
 from rest_framework.test import APITestCase
 
-from xauth.models import User
+from xauth.models import User, Metadata
 from xauth.utils import enums
+
+
+def _update_metadata(user, tp_gen_time: timedelta = None, vc_gen_time: timedelta = None):
+    meta = Metadata.objects.get_or_create(user=user)[0]
+    if tp_gen_time is not None:
+        meta.tp_gen_time = timezone.now() + (tp_gen_time if tp_gen_time is not None else timedelta(seconds=0))
+    if vc_gen_time is not None:
+        meta.vc_gen_time = timezone.now() + (vc_gen_time if vc_gen_time is not None else timedelta(seconds=0))
+    meta.save()
+
+    return meta
 
 
 class UserTestCase(APITestCase):
@@ -53,6 +67,8 @@ class UserTestCase(APITestCase):
         email = 'user@mail-domain.com'
         user = get_user_model().objects.create_user(email=email)
         self.assertEqual(user.username, email)
+        self.assertIsNotNone(user.password)
+        self.assertIs(user.has_usable_password(), False)
 
     def test_creating_user_with_username_does_not_use_email(self):
         email = 'user@mail-domain.com'
@@ -128,10 +144,138 @@ class UserTestCase(APITestCase):
         password = ''
         password1 = None
         password2 = 'None'
-        user = get_user_model().objects.create_user(email='mitch@mitch.com', username='mitch123', password=password)
-        user1 = get_user_model().objects.create_user(email='mitch1@mitch.com', username='mitch1234', password=password1)
-        user2 = get_user_model().objects.create_user(email='mitch2@mitch.com', username='mitch12345',
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', password=password)
+        user1 = get_user_model().objects.create_user(email='user1@mail-domain.com', username='user1234',
+                                                     password=password1)
+        user2 = get_user_model().objects.create_user(email='user2@mail-domain.com', username='user12345',
                                                      password=password2)
-        self.assertIsNone(user.password)
-        self.assertIsNone(user1.password)
+        self.assertIsNotNone(user.password)
+        self.assertIsNotNone(user1.password)
         self.assertIs(user2.check_password(raw_password=password2), True)
+
+    def test_request_password_reset_returns_30minute_valid_token_and_temporary_password(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        token, password = user.request_password_reset(send_mail=False)
+        metadata = Metadata.objects.get(pk=user.id)
+
+        self.assertIsNotNone(metadata)
+        self.assertIsNotNone(token)
+        self.assertIsNotNone(password)
+        self.assertEqual(int((token.claims.get('exp', 0) - int(datetime.now().strftime('%s'))) / 60), 30)
+        self.assertIs(metadata.check_temporary_password(password), True)
+
+    def test_request_verification_returns_1hour_valid_token_and_verification_code(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        token, code = user.request_verification(send_mail=False)
+        metadata = Metadata.objects.get(pk=user.id)
+
+        self.assertIsNotNone(metadata)
+        self.assertIsNotNone(token)
+        self.assertIsNotNone(code)
+        self.assertEqual(int((token.claims.get('exp', 0) - int(datetime.now().strftime('%s'))) / (60 * 60)), 1)
+        self.assertIs(metadata.check_verification_code(code), True)
+
+    def test_reset_password_with_expired_password_returns_None_token_and_expired_message(self):
+        """
+        Returned values are same for a correct or incorrect expired reset password
+        """
+        new_password = 'Qw3ty12345!@#$%'
+        incorrect_password = '1ncorrect'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        _, correct_password = user.request_password_reset(send_mail=False)
+
+        # adjust temporary password's expiry date
+        tp_gen_time = timedelta(minutes=-30, seconds=-1)
+        _update_metadata(user, tp_gen_time=tp_gen_time)
+        self.password_reset_error(user, new_password, 'expired', correct_password, incorrect_password)
+
+    def test_reset_password_with_incorrect_unexpired_password_returns_None_token_and_incorrect_message(self):
+        new_password = 'Qw3ty12345!@#$%'
+        incorrect_password = '1ncorrect'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        _, correct_password = user.request_password_reset(send_mail=False)
+        self.password_reset_error(user, new_password, 'incorrect', incorrect_password=incorrect_password)
+
+    def test_reset_password_with_correct_password_returns_Token_expiring_after_60days_and_None_message(self):
+        new_password = 'Qw3ty12345!@#$%'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        _, correct_password = user.request_password_reset(send_mail=False)
+
+        token, message = user.reset_password(
+            temporary_password=correct_password,
+            new_password=new_password,
+        )
+        # post-reset
+        self.verification_or_reset_succeeded(message, token)
+        # make sure users password was not changed in the process
+        self.assertIs(user.check_password(new_password), True)
+
+    def test_verify_with_expired_code_returns_None_token_and_expired_message(self):
+        """
+        Returned values are same for a correct or incorrect expired reset password
+        """
+        incorrect_code = '123456'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        _, correct_code = user.request_verification(send_mail=False)
+
+        # adjust temporary password's expiry date
+        vc_gen_time = timedelta(hours=-1, seconds=-1)
+        _update_metadata(user, vc_gen_time=vc_gen_time)
+        self.account_verification_error(user, 'expired', correct_code, incorrect_code)
+
+    def test_verify_with_incorrect_unexpired_code_returns_None_token_and_incorrect_message(self):
+        incorrect_code = '123456'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        _, correct_code = user.request_verification(send_mail=False)
+        self.account_verification_error(user, 'incorrect', incorrect_code=incorrect_code)
+
+    def test_verify_with_correct_code_returns_Token_expiring_after_60days_and_None_message(self):
+        password = 'password'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', password=password)
+        _, correct_code = user.request_verification(send_mail=False)
+
+        # pre-verification
+        self.assertIs(user.is_verified, False)
+        self.assertIs(user.check_password(password), True)
+        # verification
+        token, message = user.verify(code=correct_code)
+        # post-verification
+        self.verification_or_reset_succeeded(message, token)
+        self.assertIs(user.is_verified, True)
+        # make sure users password was not changed in the process
+        self.assertIs(user.check_password(password), True)
+
+    def verification_or_reset_succeeded(self, message, token):
+        self.assertIsNotNone(token)
+        self.assertIsNone(message)
+        self.assertEqual(int((token.claims.get('exp', 0) - int(datetime.now().strftime('%s'))) / (60 * 60 * 24)), 60)
+
+    def password_reset_error(self, user, new_password, error_message, correct_password=None, incorrect_password=None):
+        if incorrect_password is not None:
+            token, message = user.reset_password(
+                temporary_password=incorrect_password,
+                new_password=new_password,
+            )
+            self.assertIsNone(token)
+            self.assertIsNotNone(message)
+            self.assertEqual(message, error_message)
+        if correct_password is not None:
+            token1, message1 = user.reset_password(
+                temporary_password=correct_password,
+                new_password=new_password,
+            )
+            self.assertIsNone(token1)
+            self.assertIsNotNone(message1)
+            self.assertEqual(message1, error_message)
+
+    def account_verification_error(self, user, error_message, correct_code=None, incorrect_code=None):
+        if incorrect_code is not None:
+            token, message = user.verify(code=incorrect_code)
+            self.assertIsNone(token)
+            self.assertIsNotNone(message)
+            self.assertEqual(message, error_message)
+        if correct_code is not None:
+            token1, message1 = user.verify(code=correct_code)
+            self.assertIsNone(token1)
+            self.assertIsNotNone(message1)
+            self.assertEqual(message1, error_message)

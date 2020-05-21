@@ -1,14 +1,15 @@
 from datetime import timedelta
 
 from django.conf import settings
+from django.utils.encoding import force_str
 
 try:
-    XENTLY_AUTH_API = settings.XENTLY_AUTH_API
+    XENTLY_AUTH = settings.XENTLY_AUTH
 except AttributeError:
-    XENTLY_AUTH_API = {
+    XENTLY_AUTH = {
         # occasionally included in emails sent by the API to your users for familiarity
         'APP_NAME': 'Xently',
-        'TOKEN_KEY': settings.SECRET_KEY,
+        'TOKEN_KEY': force_str(settings.SECRET_KEY),
         'TOKEN_EXPIRY': timedelta(days=60),
         # string. Email addresses to which account / auth-related replies are to be sent.
         # Also permitted: "Name <email-address>"
@@ -24,5 +25,6 @@ except AttributeError:
         'VERIFICATION_CODE_EXPIRY': timedelta(hours=1),
         'TEMPORARY_PASSWORD_EXPIRY': timedelta(minutes=30),
         # period within which a user is considered new since account creation date
-        'NEWBIE_VALIDITY_PERIOD': timedelta(days=1)
+        'NEWBIE_VALIDITY_PERIOD': timedelta(days=1),
+        'AUTO_HASH_PASSWORD_ON_SAVE': True,
     }
