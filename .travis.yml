@@ -4,5 +4,9 @@ python:
 install:
   - pip install pipenv
   - pipenv install
+  - pipenv install coveralls
 script:
   - pipenv run python manage.py test
+  - coverage run --source='.' manage.py test
+after_success:
+  - coveralls

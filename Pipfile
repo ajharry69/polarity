@@ -14,6 +14,8 @@ argon2-cffi = "*"
 jwcrypto = "*"
 celery = "*"
 django-celery-results = "*"
+sphinx = "*"
+coverage = "*"
 
 [requires]
 python_version = "3.7"
