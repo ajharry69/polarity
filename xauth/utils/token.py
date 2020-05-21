@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import timedelta
 
 from django.conf import settings
 from django.utils.datetime_safe import datetime
@@ -155,20 +156,21 @@ class Token(TokenKey):
     :param payload will be added as a value with a key as `payload_key` as part of the `jwt.JWT` claims
     :param activation_date `datetime` when the generated token should be considered active/valid and ready for use.
     Defaults to the current `datetime` if an alternative is not provided
-    :param expiry_date `datetime` when the generated token should be considered in[active/valid] and not usable.
+    :param expiry_period `datetime` when the generated token should be considered in[active/valid] and not usable.
     Defaults to 60days from `activation_date` if an alternative is not provided
     :param payload_key key for `payload` during claims generations
     """
 
-    def __init__(self, payload, activation_date: datetime = None, expiry_date: datetime = None,
-                 payload_key: str = 'payload', password=settings.SECRET_KEY, signing_algorithm=JWT_SIG_ALG):
+    def __init__(self, payload, activation_date: datetime = None, expiry_period: timedelta = None,
+                 payload_key: str = 'payload', signing_algorithm=JWT_SIG_ALG):
+        password = settings.XENTLY_AUTH_API.get('TOKEN_KEY', settings.SECRET_KEY)
         super().__init__(password=password, signing_algorithm=signing_algorithm)
-        self.normal = None
-        self.encrypted = None
+        self._normal = None
+        self._encrypted = None
         self.payload = payload
         self.payload_key = payload_key
         self.activation_date = activation_date
-        self.expiry_date = expiry_date
+        self.expiry_period = expiry_period
 
     def __str__(self):
         # self.__repr__() # makes sure
@@ -178,16 +180,36 @@ class Token(TokenKey):
         return json.dumps(self.tokens)
 
     @property
+    def normal(self):
+        """
+        :return: unencrypted token
+        """
+        if self._normal is None:
+            self.refresh()
+        return self._normal
+
+    @property
+    def encrypted(self):
+        """
+        :return: encrypted token
+        """
+        if self._encrypted is None:
+            self.refresh()
+        return self._encrypted
+
+    @property
     def checked_claims(self):
         """
         Creates and returns a dictionary of `jwt.JWT` claims that will be checked for presence and validity
         """
-        from datetime import timedelta
         issue_date = datetime.now()
         self.activation_date = issue_date if not self.activation_date else self.activation_date
-        self.expiry_date = self.activation_date + timedelta(days=60) if not self.expiry_date else self.expiry_date
+        self.expiry_period = settings.XENTLY_AUTH_API.get('TOKEN_EXPIRY', timedelta(
+            days=60)) if self.expiry_period is None else self.expiry_period
+
+        expiry_date = self.activation_date + self.expiry_period
         activation_secs = int(self.activation_date.strftime('%s'))
-        expiry_secs = int(self.expiry_date.strftime('%s'))
+        expiry_secs = int(expiry_date.strftime('%s'))
         assert (expiry_secs > activation_secs), 'Expiration date must be a date later than activation date'
         return {
             'nbf': activation_secs,
@@ -209,21 +231,24 @@ class Token(TokenKey):
     @property
     def tokens(self):
         if not self.normal or not self.encrypted:
-            self._generate_token()
+            self.refresh()
         return dict(normal=self.normal, encrypted=self.encrypted)
 
     def get_claims(self, token=None, encrypted=True):
         token = self.encrypted if not token else token
-        assert token is not None, "Call _generate_token() first or provide a token"
+        assert token is not None, "Call refresh() first or provide a token"
         token = token.decode() if isinstance(token, bytes) else token
         tk = jwt.JWT(key=self.encryption_key, jwt=u"%s" % token).claims if encrypted else token
         claims = jwt.JWT(key=self.public_signing_key, jwt=tk).claims
         return json.loads(claims)
 
     def get_payload(self, token=None, encrypted=True):
-        return self.get_claims(token, encrypted).get(self.payload_key, None)
+        try:
+            return self.get_claims(token, encrypted).get(self.payload_key, None)
+        except AssertionError:
+            return self.payload
 
-    def _generate_token(self):
+    def refresh(self):
         header = {
             'alg': self.signing_algorithm,
             'typ': 'JWT',
@@ -232,7 +257,7 @@ class Token(TokenKey):
         token = jwt.JWT(header=header, claims=self.claims, check_claims=self.checked_claims,
                         algs=self.ALLOWED_SIGNING_ALGORITHMS)
         token.make_signed_token(key=self.private_signing_key)
-        self.normal = token.serialize()
+        self._normal = token.serialize()
         header = {
             'alg': "ECDH-ES",
             'enc': "A256GCM",
@@ -244,5 +269,5 @@ class Token(TokenKey):
         # encrypted token
         e_token = jwt.JWT(header=header, claims=self.normal)
         e_token.make_encrypted_token(key=self.encryption_key)
-        self.encrypted = e_token.serialize()
+        self._encrypted = e_token.serialize()
         return self.tokens

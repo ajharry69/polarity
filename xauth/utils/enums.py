@@ -8,6 +8,7 @@ class AuthProvider(Enum):
     TWITTER = auto()
     GITHUB = auto()
     APPLE = auto()
+    PHONE = auto()
 
     @staticmethod
     def value_of(value, default=EMAIL) -> Enum:
