@@ -274,7 +274,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         expiry = XENTLY_AUTH.get('VERIFICATION_CODE_EXPIRY', timedelta(hours=1))
         return Token(self._jsonified(), expiry_period=expiry)
 
-    def request_password_reset(self, send_mail: bool = True):
+    def request_password_reset(self, send_mail: bool = False):
         """
         Sends account password reset email with temporary password
         :return: tuple of (`Token`, temporary-password)
@@ -297,7 +297,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         metadata.save()
         return self.password_reset_token, password
 
-    def request_verification(self, send_mail: bool = True):
+    def request_verification(self, send_mail: bool = False):
         """
         Sends account verification email with verification code
         :return: tuple of (`Token`, verification-code)
