@@ -1,4 +1,5 @@
 import json
+import re
 
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
@@ -21,9 +22,11 @@ class UserManager(BaseUserManager):
             surname=None,
             first_name=None,
             last_name=None,
-            mobile_number=None, ):
-        user = self.__raw_user(email, username, password, surname, first_name, last_name, mobile_number, )
-        user.save(using=self._db)
+            mobile_number=None,
+            date_of_birth=None, ):
+        user = self.__raw_user(email, username, password, surname, first_name, last_name, mobile_number,
+                               date_of_birth, )
+        user.save(auto_hash_password=True, using=self._db)
         return user
 
     def create_superuser(self, email, username, password, first_name=None, last_name=None, ):
@@ -32,11 +35,11 @@ class UserManager(BaseUserManager):
         user.is_staff = True
         user.is_superuser = True
         user.is_verified = True
-        user.save(using=self._db)
+        user.save(auto_hash_password=True, using=self._db)
         return user
 
     def __raw_user(self, email, username, password, surname=None, first_name=None, last_name=None,
-                   mobile_number=None, ):
+                   mobile_number=None, date_of_birth=None):
         if not valid_str(email):
             raise ValueError('email is required')
         return self.model(
@@ -47,6 +50,7 @@ class UserManager(BaseUserManager):
             first_name=first_name,
             last_name=last_name,
             password=password,
+            date_of_birth=date_of_birth,
         )
 
 
@@ -55,15 +59,17 @@ class User(AbstractBaseUser, PermissionsMixin):
     Guidelines: https://docs.djangoproject.com/en/3.0/topics/auth/customizing/
     """
     __NEWBIE_GP = XENTLY_AUTH.get('NEWBIE_VALIDITY_PERIOD', None)
-    __AUTO_HASH = XENTLY_AUTH.get('AUTO_HASH_PASSWORD_ON_SAVE', True)
+    __AUTO_HASH = XENTLY_AUTH.get('AUTO_HASH_PASSWORD_ON_SAVE', False)
     __PROVIDERS = [(k, k) for k, _ in enums.AuthProvider.__members__.items()]
+    __DEFAULT_PROVIDER = enums.AuthProvider.EMAIL.name
     username = models.CharField(db_index=True, max_length=150, unique=True)
     email = models.EmailField(db_index=True, max_length=150, blank=False, unique=True)
     surname = models.CharField(db_index=True, max_length=50, blank=True, null=True)
     first_name = models.CharField(db_index=True, max_length=50, blank=True, null=True)
     last_name = models.CharField(db_index=True, max_length=50, blank=True, null=True)
     mobile_number = models.CharField(max_length=15, blank=True, null=True)
-    provider = models.CharField(choices=__PROVIDERS, max_length=20, default=enums.AuthProvider.EMAIL.name)
+    date_of_birth = models.DateField(blank=True, null=True)
+    provider = models.CharField(choices=__PROVIDERS, max_length=20, default=__DEFAULT_PROVIDER)
     is_superuser = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
@@ -92,13 +98,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     def save(self, auto_hash_password=__AUTO_HASH, *args, **kwargs):
         """
         use email as the username if it wasn't provided
-        :param auto_hash_password if True, `self.password` will be hashed before saving to database
+        :param auto_hash_password if True, `self.password` will be hashed before saving to database. Default(`False`)
         """
         _username = self.username
         self.username = self.normalize_username(_username if _username and len(_username) > 0 else self.email)
         if auto_hash_password is True:
             self.__reinitialize_password_with_hash()
         self.is_verified = self.__get_ascertained_verification_status()
+        self.__reset_empty_nullable_to_null()
         super(User, self).save(*args, **kwargs)
 
     def get_full_name(self):
@@ -143,114 +150,44 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_newbie.boolean = True
     is_newbie.short_description = 'Newbie?'
 
-    @staticmethod
-    def get_random_code(alpha_numeric: bool = True, length=None):
+    def age(self, unit='y'):
         """
-        Generates and returns random code of `length`
-        :param alpha_numeric: if `True`, include letters and numbers in the generated code
-        otherwise return only numbers
-        :param length: length of the code. Random number between 8 & 10 will be used if not
-        provided
-        :return: random code
+        Calculates user's **APPROXIMATE** age from `self.date_of_birth`
+
+        :param unit: (case-insensitive)unit of return age. Use value that starts with 'y'=years,
+        'm'=months, 'w'=weeks, 'd'=days. An invalid(not amongst listed before) will default to
+        'd'=days
+        :return: int(rounded down to the nearest value) of calculated approximate age in `unit`
+         if date_of_birth is not None
         """
-        import random
-        length = random.randint(8, 10) if length is None or not isinstance(length, int) else length
-        rand = None
-        if alpha_numeric:
-            rand = User.objects.make_random_password(length=length)
-        else:
-            rand = User.objects.make_random_password(length=length, allowed_chars='23456789')
-        return rand
+        if self.date_of_birth is None:
+            return 0
+        from datetime import datetime
+        unit = unit.lower() if valid_str(unit) else 'y'
+        days = (datetime.now().date() - datetime.strptime(self.date_of_birth, DATE_INPUT_FORMAT).date()).days
+        _age = days
+        if re.match('^y+', unit):
+            _age = int(days / 365)
+        elif re.match('^m+', unit):
+            _age = int(days / 30)
+        elif re.match('^w+', unit):
+            _age = int(days / 7)
+        elif re.match('^d+', unit):
+            _age = days
+        return _age
 
     @property
     def public_serializable_fields(self):
-        return [
-            'username',
-            'email',
-            'surname',
-            'first_name',
-            'last_name',
-            'mobile_number',
-            'provider',
-            'is_superuser',
-            'is_staff',
-            'is_verified',
-            'created_at',
-        ]
+        return ('username', 'email', 'provider', 'is_superuser', 'is_staff', 'is_verified',
+                'created_at',) + self.nullable_fields
 
     @property
     def readonly_serializable_fields(self):
-        return [
-            'username',
-            'email',
-            'is_superuser',
-            'is_staff',
-            'is_verified',
-            'created_at',
-        ]
+        return 'is_superuser', 'is_staff', 'is_verified', 'created_at',
 
-    def reset_password(self, temporary_password, new_password):
-        """
-        :param temporary_password: raw temporary password to be verified against database's temporary password
-         for correctness(match)
-        :param new_password: what should be used as the new password if temporary password matches database's
-        temporary password
-        :return: tuple (Token, message) if user's account was reset successfully (Token, None) else (None,
-        Non-None-message)
-        """
-        try:
-            metadata = Metadata.objects.get(pk=self.id)
-            if metadata.is_temporary_password_expired:
-                return None, 'expired'
-            if metadata.check_temporary_password(raw_password=temporary_password):
-                # temporary password matched(correct)
-                # update user's password
-                self.password = new_password
-                # prevent hashing of other irrelevant table column(s)
-                self.save(update_fields=['password'])
-                # reset temporary password & password generation time to None
-                metadata.temporary_password = None
-                metadata.tp_gen_time = None
-                # prevent hashing of other irrelevant table column(s)
-                metadata.save(update_fields=['temporary_password', 'tp_gen_time'])
-                return self.token, None
-            else:
-                # temporary password mismatched(incorrect)
-                return None, 'incorrect'
-        except Metadata.DoesNotExist:
-            return None, 'user not found'
-
-    def verify(self, code):
-        """
-        :param code: raw verification code to be verified against database's verification code for correctness
-        (match)
-        :return: tuple (Token, message) if user's account was verified successfully (Token, None) else (Token,
-        Non-None-message)
-        """
-        if self.is_verified:
-            # no need of repeating the task
-            return self.token, None
-        try:
-            metadata = Metadata.objects.get(pk=self.id)
-            if metadata.is_verification_code_expired:
-                return None, 'expired'
-            if metadata.check_verification_code(raw_code=code):
-                # verification code matched(correct)
-                # update user's verification status
-                self.is_verified = True
-                # prevent's automatic hashing of irrelevant password
-                self.save(auto_hash_password=False, update_fields=['is_verified'])
-                # reset verification code & code generation time to None
-                metadata.verification_code = None
-                metadata.vc_gen_time = None
-                # prevent hashing of other irrelevant table column(s)
-                metadata.save(update_fields=['verification_code', 'vc_gen_time'])
-                return self.token, None
-            else:
-                # verification code mismatched(incorrect)
-                return None, 'incorrect'
-        except Metadata.DoesNotExist:
-            return None, 'user not found'
+    @property
+    def nullable_fields(self):
+        return 'surname', 'first_name', 'last_name', 'mobile_number', 'date_of_birth',
 
     @property
     def token(self):
@@ -324,10 +261,93 @@ class User(AbstractBaseUser, PermissionsMixin):
         metadata.save()
         return self.verification_token, code
 
+    def reset_password(self, temporary_password, new_password):
+        """
+        :param temporary_password: raw temporary password to be verified against database's temporary password
+         for correctness(match)
+        :param new_password: what should be used as the new password if temporary password matches database's
+        temporary password
+        :return: tuple (Token, message) if user's account was reset successfully (Token, None) else (None,
+        Non-None-message)
+        """
+        try:
+            metadata = Metadata.objects.get(pk=self.id)
+            if metadata.is_temporary_password_expired:
+                return None, 'expired'
+            if metadata.check_temporary_password(raw_password=temporary_password):
+                # temporary password matched(correct)
+                # update user's password
+                self.password = new_password
+                # prevent hashing of other irrelevant table column(s)
+                self.save(auto_hash_password=True, update_fields=['password'])
+                # reset temporary password & password generation time to None
+                metadata.temporary_password = None
+                metadata.tp_gen_time = None
+                # prevent hashing of other irrelevant table column(s)
+                metadata.save(update_fields=['temporary_password', 'tp_gen_time'])
+                # TODO: add password reset log
+                return self.token, None
+            else:
+                # temporary password mismatched(incorrect)
+                return None, 'incorrect'
+        except Metadata.DoesNotExist:
+            return None, 'user not found'
+
+    def verify(self, code):
+        """
+        :param code: raw verification code to be verified against database's verification code for correctness
+        (match)
+        :return: tuple (Token, message) if user's account was verified successfully (Token, None) else (Token,
+        Non-None-message)
+        """
+        if self.is_verified:
+            # no need of repeating the task
+            return self.token, None
+        try:
+            metadata = Metadata.objects.get(pk=self.id)
+            if metadata.is_verification_code_expired:
+                return None, 'expired'
+            if metadata.check_verification_code(raw_code=code):
+                # verification code matched(correct)
+                # update user's verification status
+                self.is_verified = True
+                # prevent's automatic hashing of irrelevant password
+                self.save(auto_hash_password=False, update_fields=['is_verified'])
+                # reset verification code & code generation time to None
+                metadata.verification_code = None
+                metadata.vc_gen_time = None
+                # prevent hashing of other irrelevant table column(s)
+                metadata.save(update_fields=['verification_code', 'vc_gen_time'])
+                return self.token, None
+            else:
+                # verification code mismatched(incorrect)
+                return None, 'incorrect'
+        except Metadata.DoesNotExist:
+            return None, 'user not found'
+
     def send_email(self, subject, body: Mail.Body):
         sender_address = XENTLY_AUTH.get('ACCOUNTS_EMAIL')
         reply_addresses = XENTLY_AUTH.get('REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES')
         Mail.send(subject, body, address=Mail.Address(self.email, sender=sender_address, reply_to=reply_addresses))
+
+    @staticmethod
+    def get_random_code(alpha_numeric: bool = True, length=None):
+        """
+        Generates and returns random code of `length`
+        :param alpha_numeric: if `True`, include letters and numbers in the generated code
+        otherwise return only numbers
+        :param length: length of the code. Random number between 8 & 10 will be used if not
+        provided
+        :return: random code
+        """
+        import random
+        length = random.randint(8, 10) if length is None or not isinstance(length, int) else length
+        rand = None
+        if alpha_numeric:
+            rand = User.objects.make_random_password(length=length)
+        else:
+            rand = User.objects.make_random_password(length=length, allowed_chars='23456789')
+        return rand
 
     def _jsonified(self):
         return dict(
@@ -337,6 +357,7 @@ class User(AbstractBaseUser, PermissionsMixin):
             first_name=self.first_name,
             last_name=self.last_name,
             mobile_number=self.mobile_number,
+            date_of_birth=self.date_of_birth,
             provider=self.provider,
             is_superuser=self.is_superuser,
             is_staff=self.is_staff,
@@ -388,18 +409,11 @@ class User(AbstractBaseUser, PermissionsMixin):
                 verified = True
         return verified
 
-
-class PasswordResetLog(models.Model):
-    __reset_types = [(k, k) for k, _ in enums.PasswordResetType.__members__.items()]
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    type = models.CharField(choices=__reset_types, max_length=10, default=enums.PasswordResetType.RESET.name)
-    request_ip = models.GenericIPAddressField(db_index=True, unpack_ipv4=True, blank=True, null=True)
-    change_ip = models.GenericIPAddressField(db_index=True, unpack_ipv4=True, blank=True, null=True)
-    request_time = models.DateTimeField(default=timezone.now)
-    change_time = models.DateTimeField(blank=True, null=True)
-
-    class Meta:
-        ordering = ('-request_time', '-change_time', '-request_ip', '-change_ip',)
+    def __reset_empty_nullable_to_null(self):
+        for f in self.nullable_fields:
+            attr = getattr(self, f)
+            if valid_str(attr) is False:
+                setattr(self, f, None)
 
 
 # noinspection PyUnresolvedReferences,PyProtectedMember
@@ -486,3 +500,27 @@ class AccessLog(models.Model):
             self.sign_in_ip = None
 
         super(AccessLog, self).save(*args, **kwargs)
+
+
+class PasswordResetLog(models.Model):
+    __reset_types = [(k, k) for k, _ in enums.PasswordResetType.__members__.items()]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    type = models.CharField(choices=__reset_types, max_length=10, default=enums.PasswordResetType.RESET.name)
+    request_ip = models.GenericIPAddressField(db_index=True, unpack_ipv4=True, blank=True, null=True)
+    change_ip = models.GenericIPAddressField(db_index=True, unpack_ipv4=True, blank=True, null=True)
+    request_time = models.DateTimeField(default=timezone.now)
+    change_time = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ('-request_time', '-change_time', '-request_ip', '-change_ip',)
+
+
+class FailedSignInAttempt(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    device_ip = models.GenericIPAddressField(db_index=True, unpack_ipv4=True, blank=True, null=True)
+    attempt_date = models.DateField(default=timezone.now)
+    attempt_count = models.IntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('-attempt_date',)

@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import pre_save, post_save
 from django.utils import timezone
 
-from xauth.models import PasswordResetLog, AccessLog, Metadata
+from xauth.models import PasswordResetLog, AccessLog
 
 
 def _create_password_reset_log(user):
@@ -46,15 +46,5 @@ def on_user_post_save(sender, instance, created, **kwargs):
         user.request_verification()
 
 
-def on_metadata_pre_save(sender, instance, **kwargs):
-    """
-    Checks if `instance`(Metadata)'s temporary_password is non-null then send an email with
-    temporary password to the user notifying them of the reset request
-    """
-    user = instance.user
-    temporary_password = user.get_random_code()
-
-
 pre_save.connect(on_user_pre_save, sender=get_user_model(), dispatch_uid='1')
-pre_save.connect(on_metadata_pre_save, sender=Metadata, dispatch_uid='2')
-post_save.connect(on_user_post_save, sender=get_user_model(), dispatch_uid='3')
+post_save.connect(on_user_post_save, sender=get_user_model(), dispatch_uid='2')

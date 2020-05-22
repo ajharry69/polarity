@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 
 from xauth.models import User, Metadata
 from xauth.utils import enums
+from xauth.utils.settings import DATE_INPUT_FORMAT
 
 
 def _update_metadata(user, tp_gen_time: timedelta = None, vc_gen_time: timedelta = None):
@@ -21,6 +22,42 @@ def _update_metadata(user, tp_gen_time: timedelta = None, vc_gen_time: timedelta
 
 
 class UserTestCase(APITestCase):
+
+    def verification_or_reset_succeeded(self, message, token):
+        self.assertIsNotNone(token)
+        self.assertIsNone(message)
+        self.assertEqual(int((token.claims.get('exp', 0) - int(datetime.now().strftime('%s'))) / (60 * 60 * 24)), 60)
+
+    def password_reset_error(self, user, new_password, error_message, correct_password=None, incorrect_password=None):
+        if incorrect_password is not None:
+            token, message = user.reset_password(
+                temporary_password=incorrect_password,
+                new_password=new_password,
+            )
+            self.assertIsNone(token)
+            self.assertIsNotNone(message)
+            self.assertEqual(message, error_message)
+        if correct_password is not None:
+            token1, message1 = user.reset_password(
+                temporary_password=correct_password,
+                new_password=new_password,
+            )
+            self.assertIsNone(token1)
+            self.assertIsNotNone(message1)
+            self.assertEqual(message1, error_message)
+
+    def account_verification_error(self, user, error_message, correct_code=None, incorrect_code=None):
+        if incorrect_code is not None:
+            token, message = user.verify(code=incorrect_code)
+            self.assertIsNone(token)
+            self.assertIsNotNone(message)
+            self.assertEqual(message, error_message)
+        if correct_code is not None:
+            token1, message1 = user.verify(code=correct_code)
+            self.assertIsNone(token1)
+            self.assertIsNotNone(message1)
+            self.assertEqual(message1, error_message)
+
     def test_get_full_name_returns_username_if_neither_names_are_provided(self):
         """
         Return username if it's provided and neither types of names are provided
@@ -94,9 +131,11 @@ class UserTestCase(APITestCase):
 
     def test_check_password_for_created_user_returns_True(self):
         password = 'password123!'
-        user = get_user_model().objects.create(email='user@mail-domain.com', password=password)
+        user = get_user_model().objects.create(email='user@mail-domain.com', )
+        user.password = password
+        user.save(auto_hash_password=True)
         user1 = User(email='user1@mail-domain.com', password=password)
-        user1.save()
+        user1.save(auto_hash_password=True)
 
         self.assertEqual(user.check_password(password), True)
         self.assertEqual(user1.check_password(password), True)
@@ -245,37 +284,25 @@ class UserTestCase(APITestCase):
         # make sure users password was not changed in the process
         self.assertIs(user.check_password(password), True)
 
-    def verification_or_reset_succeeded(self, message, token):
-        self.assertIsNotNone(token)
-        self.assertIsNone(message)
-        self.assertEqual(int((token.claims.get('exp', 0) - int(datetime.now().strftime('%s'))) / (60 * 60 * 24)), 60)
+    def test_age_with_null_date_of_birth_returns_zero(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', date_of_birth=None)
+        user1 = get_user_model().objects.create_user(email='user1@mail-domain.com', date_of_birth='')
 
-    def password_reset_error(self, user, new_password, error_message, correct_password=None, incorrect_password=None):
-        if incorrect_password is not None:
-            token, message = user.reset_password(
-                temporary_password=incorrect_password,
-                new_password=new_password,
-            )
-            self.assertIsNone(token)
-            self.assertIsNotNone(message)
-            self.assertEqual(message, error_message)
-        if correct_password is not None:
-            token1, message1 = user.reset_password(
-                temporary_password=correct_password,
-                new_password=new_password,
-            )
-            self.assertIsNone(token1)
-            self.assertIsNotNone(message1)
-            self.assertEqual(message1, error_message)
+        self.assertEqual(user.age(), 0)
+        self.assertEqual(user1.age(), 0)
 
-    def account_verification_error(self, user, error_message, correct_code=None, incorrect_code=None):
-        if incorrect_code is not None:
-            token, message = user.verify(code=incorrect_code)
-            self.assertIsNone(token)
-            self.assertIsNotNone(message)
-            self.assertEqual(message, error_message)
-        if correct_code is not None:
-            token1, message1 = user.verify(code=correct_code)
-            self.assertIsNone(token1)
-            self.assertIsNotNone(message1)
-            self.assertEqual(message1, error_message)
+    def test_age_with_non_null_date_of_birth_returns_expected_age_for_valid_age_unit(self):
+        dob = (datetime.now() + timedelta(days=-8395)).strftime(DATE_INPUT_FORMAT)
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', date_of_birth=dob)
+        self.assertEqual(user.age(unit='years'), 23)
+        self.assertEqual(user.age(unit='year'), 23)
+        self.assertEqual(user.age(unit='y'), 23)
+        self.assertEqual(user.age(unit='m'), 279)  # rounded down to the nearest integer value
+        self.assertEqual(user.age(unit='w'), 1199)
+        self.assertEqual(user.age(unit='d'), 8395)
+
+    def test_age_with_non_null_date_of_birth_returns_expected_age_for_invalid_age_unit(self):
+        """returns days duration by default"""
+        dob = (datetime.now() + timedelta(days=-8395)).strftime(DATE_INPUT_FORMAT)
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', date_of_birth=dob)
+        self.assertEqual(user.age(unit='invalid'), 8395)

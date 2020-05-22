@@ -5,6 +5,7 @@
 **.pyc
 **.env
 **.sqlite3
+**.coverage
 .venv/
 .idea/
-**xauth-secrets/
+**secrets/
