@@ -103,6 +103,7 @@ class UserTestCase(APITestCase):
     def test_creating_user_without_username_uses_email_as_username(self):
         email = 'user@mail-domain.com'
         user = get_user_model().objects.create_user(email=email)
+        self.assertEqual(user.provider, enums.AuthProvider.EMAIL.name)
         self.assertEqual(user.username, email)
         self.assertIsNotNone(user.password)
         self.assertIs(user.has_usable_password(), False)
@@ -166,13 +167,15 @@ class UserTestCase(APITestCase):
 
     def test_is_verified_for_non_email_provider_or_superuser_and_or_staff_users(self):
         provider = enums.AuthProvider.GOOGLE.name
+        phone_provider = enums.AuthProvider.PHONE.name
         user = get_user_model().objects.create(email='user@mail-domain.com', provider=provider)
         user1 = get_user_model().objects.create(email='user1@mail-domain.com', is_superuser=True, password='9V55w0rd')
         user2 = get_user_model().objects.create(email='user2@mail-domain.com', is_staff=True)
         user3 = get_user_model().objects.create(email='user3@mail-domain.com', provider=enums.AuthProvider.EMAIL.name,
                                                 is_staff=True)
-        user4 = get_user_model().objects.create(email='user4@mail-domain.com', provider=enums.AuthProvider.PHONE.name, )
+        user4 = get_user_model().objects.create(email='user4@mail-domain.com', provider=phone_provider, )
 
+        self.assertEqual(user4.provider, phone_provider)
         self.assertIs(user.is_verified, True)
         self.assertIs(user1.is_verified, True)
         self.assertIs(user2.is_verified, True)

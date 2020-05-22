@@ -23,7 +23,8 @@ class UserManager(BaseUserManager):
             first_name=None,
             last_name=None,
             mobile_number=None,
-            date_of_birth=None, ):
+            date_of_birth=None,
+            provider=None, ):
         user = self.__raw_user(email, username, password, surname, first_name, last_name, mobile_number,
                                date_of_birth, )
         user.save(auto_hash_password=True, using=self._db)
@@ -39,7 +40,7 @@ class UserManager(BaseUserManager):
         return user
 
     def __raw_user(self, email, username, password, surname=None, first_name=None, last_name=None,
-                   mobile_number=None, date_of_birth=None):
+                   mobile_number=None, date_of_birth=None, provider=None, ):
         if not valid_str(email):
             raise ValueError('email is required')
         return self.model(
@@ -51,6 +52,7 @@ class UserManager(BaseUserManager):
             last_name=last_name,
             password=password,
             date_of_birth=date_of_birth,
+            provider=provider,
         )
 
 
@@ -100,6 +102,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         use email as the username if it wasn't provided
         :param auto_hash_password if True, `self.password` will be hashed before saving to database. Default(`False`)
         """
+        self.provider = self.provider if valid_str(self.provider) else self.__DEFAULT_PROVIDER
         _username = self.username
         self.username = self.normalize_username(_username if _username and len(_username) > 0 else self.email)
         if auto_hash_password is True:
