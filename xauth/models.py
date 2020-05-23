@@ -1,12 +1,14 @@
 import json
 import re
+from datetime import date, datetime
 
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+from django.utils.datetime_safe import datetime as dj_datetime, date as dj_date
 from django.utils.translation import gettext_lazy as _
 
-from .utils import enums, valid_str
+from .utils import enums, valid_str, reset_empty_nullable_to_null
 from .utils.mail import Mail
 from .utils.settings import *
 from .utils.token import Token
@@ -60,6 +62,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     """
     Guidelines: https://docs.djangoproject.com/en/3.0/topics/auth/customizing/
     """
+    __DEVICE_IP = None
+    __DEVICE_ID = None
     __NEWBIE_GP = XENTLY_AUTH.get('NEWBIE_VALIDITY_PERIOD', None)
     __AUTO_HASH = XENTLY_AUTH.get('AUTO_HASH_PASSWORD_ON_SAVE', False)
     __PROVIDERS = [(k, k) for k, _ in enums.AuthProvider.__members__.items()]
@@ -88,6 +92,16 @@ class User(AbstractBaseUser, PermissionsMixin):
     # expected as part of parameters in `objects`(UserManager).create_superuser
     REQUIRED_FIELDS = ['email', 'first_name', 'last_name', ]
 
+    # Contains a tuple of fields that are "safe" to access publicly with proper
+    # caution taken for modification
+    READONLY_FIELDS = ('is_superuser', 'is_staff', 'is_verified', 'created_at',)
+
+    # Contains a tuple of fields that are likely to have a null(None) value
+    NULLABLE_FIELDS = ('surname', 'first_name', 'last_name', 'mobile_number', 'date_of_birth',)
+
+    # Contains a tuple of fields that are "safe" to access publicly
+    PUBLIC_ACCESS_FIELDS = ('username', 'email', 'provider',) + NULLABLE_FIELDS + READONLY_FIELDS
+
     class Meta:
         ordering = ('created_at', 'updated_at', 'username',)
 
@@ -108,7 +122,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         if auto_hash_password is True:
             self.__reinitialize_password_with_hash()
         self.is_verified = self.__get_ascertained_verification_status()
-        self.__reset_empty_nullable_to_null()
+        reset_empty_nullable_to_null(self, self.NULLABLE_FIELDS)
         super(User, self).save(*args, **kwargs)
 
     def get_full_name(self):
@@ -180,17 +194,20 @@ class User(AbstractBaseUser, PermissionsMixin):
         return _age
 
     @property
-    def public_serializable_fields(self):
-        return ('username', 'email', 'provider', 'is_superuser', 'is_staff', 'is_verified',
-                'created_at',) + self.nullable_fields
+    def device_ip(self):
+        return self.__DEVICE_IP
+
+    @device_ip.setter
+    def device_ip(self, value):
+        self.__DEVICE_IP = value
 
     @property
-    def readonly_serializable_fields(self):
-        return 'is_superuser', 'is_staff', 'is_verified', 'created_at',
+    def device_id(self):
+        return self.__DEVICE_ID
 
-    @property
-    def nullable_fields(self):
-        return 'surname', 'first_name', 'last_name', 'mobile_number', 'date_of_birth',
+    @device_id.setter
+    def device_id(self, value):
+        self.__DEVICE_ID = value
 
     @property
     def token(self):
@@ -235,6 +252,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         metadata.temporary_password = password
         metadata.tp_gen_time = timezone.now()
         metadata.save()
+
+        # create a new password reset log
+        self.update_or_create_password_reset_log(force_create=True)
         return self.password_reset_token, password
 
     def request_verification(self, send_mail: bool = False):
@@ -288,7 +308,8 @@ class User(AbstractBaseUser, PermissionsMixin):
                 metadata.tp_gen_time = None
                 # prevent hashing of other irrelevant table column(s)
                 metadata.save(update_fields=['temporary_password', 'tp_gen_time'])
-                # TODO: add password reset log
+                # reflect the change to the logs
+                self.update_or_create_password_reset_log()
                 return self.token, None
             else:
                 # temporary password mismatched(incorrect)
@@ -321,6 +342,8 @@ class User(AbstractBaseUser, PermissionsMixin):
                 metadata.vc_gen_time = None
                 # prevent hashing of other irrelevant table column(s)
                 metadata.save(update_fields=['verification_code', 'vc_gen_time'])
+                # user is assumed to have just signed-in since he/she can now access resources
+                self.update_or_create_access_log(force_create=True)
                 return self.token, None
             else:
                 # verification code mismatched(incorrect)
@@ -332,6 +355,61 @@ class User(AbstractBaseUser, PermissionsMixin):
         sender_address = XENTLY_AUTH.get('ACCOUNTS_EMAIL')
         reply_addresses = XENTLY_AUTH.get('REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES')
         Mail.send(subject, body, address=Mail.Address(self.email, sender=sender_address, reply_to=reply_addresses))
+
+    def update_or_create_password_reset_log(self, force_create=False, type=enums.PasswordResetType.RESET):
+        """
+        :return: tuple (object, created), where created is a boolean specifying whether
+         an object was created.
+        """
+        _type = type.name if isinstance(type, enums.PasswordResetType) else type
+        objects = PasswordResetLog.objects
+
+        def create(user):
+            return objects.create(user=user, request_ip=user.device_ip, request_time=timezone.now(),
+                                  change_ip=user.device_ip, change_time=timezone.now(), type=_type, )
+
+        created = force_create
+        if force_create is True:
+            log = create(self)
+        else:
+            logs = objects.filter(user=self, request_ip=self.device_ip, type=_type).order_by('-request_time')
+            if len(logs) > 0:
+                log = logs[0]
+                log.change_ip = self.device_ip
+                log.change_time = timezone.now()
+                log.save()
+                created = False
+            else:
+                log = create(self)
+                created = True
+        return log, created
+
+    def update_or_create_access_log(self, force_create=False):
+        """
+        :return: tuple (object, created), where created is a boolean specifying whether
+         an object was created.
+        """
+        objects = AccessLog.objects
+
+        def create(user):
+            return objects.create(user=user, sign_in_ip=user.device_ip, sign_in_time=timezone.now(),
+                                  sign_out_ip=user.device_ip, sign_out_time=timezone.now(), )
+
+        created = force_create
+        if force_create is True:
+            log = create(self)
+        else:
+            logs = objects.filter(user=self, sign_in_ip=self.device_ip, ).order_by('-sign_in_time')
+            if len(logs) > 0:
+                log = logs[0]
+                log.sign_out_ip = self.device_ip
+                log.sign_out_time = timezone.now()
+                log.save()
+                created = False
+            else:
+                log = create(self)
+                created = True
+        return log, created
 
     @staticmethod
     def get_random_code(alpha_numeric: bool = True, length=None):
@@ -353,20 +431,16 @@ class User(AbstractBaseUser, PermissionsMixin):
         return rand
 
     def _jsonified(self):
-        return dict(
-            username=self.username,
-            email=self.email,
-            surname=self.surname,
-            first_name=self.first_name,
-            last_name=self.last_name,
-            mobile_number=self.mobile_number,
-            date_of_birth=self.date_of_birth,
-            provider=self.provider,
-            is_superuser=self.is_superuser,
-            is_staff=self.is_staff,
-            is_verified=self.is_verified,
-            created_at=self.created_at.strftime('%Y-%m-%dT%H:%M:%S%z'),
-        )
+        data = {}
+        for f in self.PUBLIC_ACCESS_FIELDS:
+            val = getattr(self, f, None)
+            if isinstance(val, date) or isinstance(val, dj_date):
+                data[f] = val.isoformat()
+            elif isinstance(val, datetime) or isinstance(val, dj_datetime):
+                data[f] = val.isoformat()
+            else:
+                data[f] = val
+        return data
 
     def _hash_code(self, raw_code: str):
         """
@@ -412,19 +486,10 @@ class User(AbstractBaseUser, PermissionsMixin):
                 verified = True
         return verified
 
-    def __reset_empty_nullable_to_null(self):
-        for f in self.nullable_fields:
-            attr = getattr(self, f)
-            if valid_str(attr) is False:
-                setattr(self, f, None)
-
 
 # noinspection PyUnresolvedReferences,PyProtectedMember
 class Metadata(models.Model):
     """
-    TODO: 1. mark `user` as verified or unverified if verification_code is updated to `null` or
-        `!null` respectively
-        2. create a password reset log when temporary
     Contains additional data used for user account 'house-keeping'
 
     :cvar temporary_password hashed short-live password expected to be used for password reset
@@ -444,9 +509,6 @@ class Metadata(models.Model):
             self.verification_code = self._hash_code(raw_code)
         if valid_str(raw_password):
             self.temporary_password = self._hash_code(raw_password)
-            # probably a password reset was requested, create log
-            # Fix. no ip addresses will be attached to this!
-            PasswordResetLog.objects.create(user=self.user, )
         super(Metadata, self).save(*args, **kwargs)
 
     @property
@@ -488,15 +550,16 @@ class AccessLog(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Saves access-log without the ambiguity of an access-log being recorded with sign_in and sign_out data in the
-        same tuple/row(in a database table) since the two are mutually exclusive events
+        Saves access-log without the ambiguity of an access-log being recorded with sign_in and
+        sign_out data in the same tuple/row(in a database table) since the two are mutually
+        exclusive events
         """
-        if valid_str(self.sign_in_ip) and not valid_str(self.sign_out_ip):
+        if valid_str(self.sign_in_ip) is True and valid_str(self.sign_out_ip) is False:
             # probably a sign in was done. Just update `time_signed_in` without updating `time_signed_out`
             self.time_signed_in = timezone.now()
             self.time_signed_out = None
             self.sign_out_ip = None
-        if valid_str(self.sign_out_ip) and not valid_str(self.sign_in_ip):
+        if valid_str(self.sign_out_ip) is True and valid_str(self.sign_in_ip) is False:
             # probably a sign out was done. Just update `time_signed_out` without updating `time_signed_in`
             self.time_signed_out = timezone.now()
             self.time_signed_in = None
@@ -506,9 +569,10 @@ class AccessLog(models.Model):
 
 
 class PasswordResetLog(models.Model):
-    __reset_types = [(k, k) for k, _ in enums.PasswordResetType.__members__.items()]
+    __RESET_TYPES = [(k, k) for k, _ in enums.PasswordResetType.__members__.items()]
+    __DEFAULT_RESET_TYPE = enums.PasswordResetType.RESET.name
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    type = models.CharField(choices=__reset_types, max_length=10, default=enums.PasswordResetType.RESET.name)
+    type = models.CharField(choices=__RESET_TYPES, max_length=10, default=__DEFAULT_RESET_TYPE)
     request_ip = models.GenericIPAddressField(db_index=True, unpack_ipv4=True, blank=True, null=True)
     change_ip = models.GenericIPAddressField(db_index=True, unpack_ipv4=True, blank=True, null=True)
     request_time = models.DateTimeField(default=timezone.now)
