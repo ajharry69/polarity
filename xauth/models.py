@@ -65,7 +65,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     __DEVICE_IP = None
     __DEVICE_ID = None
     __NEWBIE_GP = XENTLY_AUTH.get('NEWBIE_VALIDITY_PERIOD', None)
-    __AUTO_HASH = XENTLY_AUTH.get('AUTO_HASH_PASSWORD_ON_SAVE', False)
+    __AUTO_HASH = XENTLY_AUTH.get('AUTO_HASH_PASSWORD_ON_SAVE', True)
     __PROVIDERS = [(k, k) for k, _ in enums.AuthProvider.__members__.items()]
     __DEFAULT_PROVIDER = enums.AuthProvider.EMAIL.name
     username = models.CharField(db_index=True, max_length=150, unique=True)
@@ -94,13 +94,15 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     # Contains a tuple of fields that are "safe" to access publicly with proper
     # caution taken for modification
-    READONLY_FIELDS = ('is_superuser', 'is_staff', 'is_verified', 'created_at',)
+    READ_ONLY_FIELDS = ('id', 'is_superuser', 'is_staff', 'is_verified', 'created_at',)
+
+    WRITE_ONLY_FIELDS = ('password',)
 
     # Contains a tuple of fields that are likely to have a null(None) value
     NULLABLE_FIELDS = ('surname', 'first_name', 'last_name', 'mobile_number', 'date_of_birth',)
 
     # Contains a tuple of fields that are "safe" to access publicly
-    PUBLIC_ACCESS_FIELDS = ('username', 'email', 'provider',) + NULLABLE_FIELDS + READONLY_FIELDS
+    PUBLIC_READ_WRITE_FIELDS = ('username', 'email', 'provider',) + NULLABLE_FIELDS + READ_ONLY_FIELDS
 
     class Meta:
         ordering = ('created_at', 'updated_at', 'username',)
@@ -211,8 +213,12 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def token(self):
+        """
+        :return: verification token if user's account was not verified(self.is_verified=False) already
+        otherwise full-access token is returned
+        """
         expiry = XENTLY_AUTH.get('TOKEN_EXPIRY', timedelta(days=60))
-        return Token(self._jsonified(), expiry_period=expiry)
+        return Token(self._jsonified(), expiry_period=expiry) if self.is_verified else self.verification_token
 
     @property
     def password_reset_token(self):
@@ -432,7 +438,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def _jsonified(self):
         data = {}
-        for f in self.PUBLIC_ACCESS_FIELDS:
+        for f in self.PUBLIC_READ_WRITE_FIELDS:
             val = getattr(self, f, None)
             if isinstance(val, date) or isinstance(val, dj_date):
                 data[f] = val.isoformat()

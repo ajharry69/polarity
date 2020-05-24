@@ -1,7 +1,8 @@
 """
 Used for our data representations
 """
-from django.contrib.auth.models import User, Group
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from rest_framework import serializers
 
 
@@ -10,10 +11,14 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='quickstart:user-detail')
     # not necessary if `app_name` is not provided in `url.py`
     groups = serializers.HyperlinkedRelatedField(view_name='quickstart:group-detail', many=True, read_only=True)
+    token = serializers.DictField(source='token.tokens', read_only=True, )
 
     class Meta:
-        model = User
-        fields = ['url', 'username', 'email', 'groups']
+        model = get_user_model()
+        # fields = ['url', 'username', 'email', 'groups']
+        # assumption is made that get_user_model() is an instance of `xauth.models.User`
+        fields = get_user_model().PUBLIC_READ_WRITE_FIELDS + ('url', 'groups', 'token',)
+        read_only_fields = get_user_model().READ_ONLY_FIELDS
 
 
 class GroupSerializer(serializers.HyperlinkedModelSerializer):

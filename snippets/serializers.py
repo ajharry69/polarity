@@ -1,4 +1,4 @@
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from .models import *
@@ -13,7 +13,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='snippets:user-detail')
 
     class Meta:
-        model = User
+        model = get_user_model()
         fields = ['url', 'id', 'username', 'snippets']
 
 

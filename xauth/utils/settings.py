@@ -26,7 +26,7 @@ except AttributeError:
         'TEMPORARY_PASSWORD_EXPIRY': timedelta(minutes=30),
         # period within which a user is considered new since account creation date
         'NEWBIE_VALIDITY_PERIOD': timedelta(days=1),
-        'AUTO_HASH_PASSWORD_ON_SAVE': False,
+        'AUTO_HASH_PASSWORD_ON_SAVE': True,
     }
 
 try:
