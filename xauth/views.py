@@ -1,12 +1,18 @@
 import re
 
 from django.contrib.auth.models import AnonymousUser
-from rest_framework import permissions, generics, views, status
+from rest_framework import permissions, generics, views, status, viewsets
 from rest_framework.response import Response
 
 from .permissions import *
 from .serializers import *
 from .utils import get_204_wrapped_response, get_wrapped_response
+
+
+class SecurityQuestionView(viewsets.ModelViewSet):
+    queryset = SecurityQuestion.objects.filter(usable=True)
+    serializer_class = SecurityQuestionSerializer
+    permission_classes = [IsSuperUserOrReadOnly, ]
 
 
 class ProfileView(generics.RetrieveUpdateDestroyAPIView):

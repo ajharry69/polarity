@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from xauth.models import SecurityQuestion
+
 
 class ProfileSerializer(serializers.ModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='xauth:profile')
@@ -39,3 +41,13 @@ class SignUpSerializer(AuthSerializer):
 
     def create(self, validated_data):
         return super().create(validated_data)
+
+
+class SecurityQuestionSerializer(serializers.HyperlinkedModelSerializer):
+    url = serializers.HyperlinkedIdentityField(view_name='xauth:securityquestion-detail')
+    date_added = serializers.DateTimeField(source='added_on', read_only=True, )
+    usable = serializers.BooleanField(default=True, )
+
+    class Meta:
+        model = SecurityQuestion
+        fields = ('url', 'question', 'usable', 'date_added',)
