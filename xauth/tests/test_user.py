@@ -241,6 +241,11 @@ class UserTestCase(APITestCase):
     def test_reset_password_with_correct_password_returns_Token_expiring_after_60days_and_None_message(self):
         new_password = 'Qw3ty12345!@#$%'
         user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        self.assertIs(user.is_verified, False)
+        user.is_verified = True
+        user.save(auto_hash_password=False, update_fields=['is_active'])
+        self.assertIs(user.is_verified, True)
+        self.assertIs(user.has_usable_password(), False)
         _, correct_password = user.request_password_reset(send_mail=False)
 
         token, message = user.reset_password(

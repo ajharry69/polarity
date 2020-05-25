@@ -1,8 +1,9 @@
 from django.contrib.auth import get_user_model
-from django.db.models.signals import pre_save, post_save
+from django.db import IntegrityError
+from django.db.models.signals import pre_save, post_save, post_migrate
 from django.utils import timezone
 
-from xauth.models import AccessLog
+from xauth.models import AccessLog, SecurityQuestion
 
 
 def on_user_pre_save(sender, instance, **kwargs):
@@ -24,8 +25,16 @@ def on_user_post_save(sender, instance, created, **kwargs):
     """
     user = instance
     if not user.is_verified:
-        user.request_verification()
+        user.request_verification()  # TODO: Send mail by default
+
+
+def on_post_migrate(sender, **kwargs):
+    try:
+        SecurityQuestion.objects.get_or_create(question='Default', usable=False, )
+    except IntegrityError:
+        pass
 
 
 pre_save.connect(on_user_pre_save, sender=get_user_model(), dispatch_uid='1')
 post_save.connect(on_user_post_save, sender=get_user_model(), dispatch_uid='2')
+post_migrate.connect(on_post_migrate, dispatch_uid='3')

@@ -26,6 +26,9 @@ class ProfileView(generics.RetrieveUpdateDestroyAPIView):
     def delete(self, request, *args, **kwargs):
         return get_204_wrapped_response(super().delete(request, *args, **kwargs))
 
+    def perform_update(self, serializer):
+        serializer.save(auto_hash_password=False)
+
 
 class SignUpView(generics.CreateAPIView):
     queryset = get_user_model().objects.all()

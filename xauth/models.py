@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
-from django.utils import timezone
+from django.utils import timezone, encoding
 from django.utils.datetime_safe import datetime as dj_datetime, date as dj_date
 from django.utils.translation import gettext_lazy as _
 
@@ -14,6 +14,10 @@ from .utils.settings import *
 from .utils.token import Token
 
 PASSWORD_LENGTH = 128
+
+
+def default_security_question():
+    return SecurityQuestion.objects.first()
 
 
 class UserManager(BaseUserManager):
@@ -196,6 +200,20 @@ class User(AbstractBaseUser, PermissionsMixin):
         return _age
 
     @property
+    def uidb64(self):
+        """
+        :return: The user’s id encoded in base 64.
+        """
+        return encoding.force_bytes(f'{self.id}')
+
+    @property
+    def id_from_uidb64(self):
+        """
+        :return: The user’s id from encoded base 64 equivalent.
+        """
+        return int(encoding.force_str(self.uidb64))
+
+    @property
     def device_ip(self):
         return self.__DEVICE_IP
 
@@ -218,7 +236,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         otherwise full-access token is returned
         """
         expiry = XENTLY_AUTH.get('TOKEN_EXPIRY', timedelta(days=60))
-        return Token(self._jsonified(), expiry_period=expiry) if self.is_verified else self.verification_token
+        requires_verification = not self.is_verified and XENTLY_AUTH.get('ENFORCE_ACCOUNT_VERIFICATION', True)
+        return self.verification_token if requires_verification else Token(self._jsonified(), expiry_period=expiry)
 
     @property
     def password_reset_token(self):
@@ -357,6 +376,28 @@ class User(AbstractBaseUser, PermissionsMixin):
         except Metadata.DoesNotExist:
             return None, 'user not found'
 
+    def activate_account(self, security_question_answer):
+        """
+        :param security_question_answer: raw answer to user's security question to be verified against
+        database's answer for correctness (match)
+        :return: tuple (Token, message) if user's account was activated successfully (Token, None) else
+        (Token, Non-None-message)
+        """
+        if self.is_active:
+            return self.token, None
+        try:
+            metadata = Metadata.objects.get(pk=self.id)
+            if metadata.check_security_question_answer(raw_answer=security_question_answer):
+                # answer was correct, activate account
+                self.is_active = True
+                self.save(auto_hash_password=False, update_fields=['is_active'])
+                return self.token, None
+            else:
+                # wrong answer
+                return None, 'incorrect'
+        except Metadata.DoesNotExist:
+            return None, 'security question not found'
+
     def send_email(self, subject, body: Mail.Body):
         sender_address = XENTLY_AUTH.get('ACCOUNTS_EMAIL')
         reply_addresses = XENTLY_AUTH.get('REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES')
@@ -448,18 +489,18 @@ class User(AbstractBaseUser, PermissionsMixin):
                 data[f] = val
         return data
 
-    def _hash_code(self, raw_code: str):
+    def _hash_code(self, raw_code):
         """
         Uses `settings.PASSWORD_HASHERS` to create and return a hashed `code` just like creating a hashed
         password
 
-        :param raw_code: data to be hashed
+        :param raw_code: data to be hashed. Provide None to set an unusable hash code(password)
         :return: hashed version of `code`
         """
         # temporarily hold the user's password
         acc_password = self.password
-        # hash the code
-        self.set_password(raw_code)  # will reinitialize the password
+        # hash the code. will reinitialize the password
+        self.set_unusable_password() if raw_code is None else self.set_password(raw_code)
         code = self.password  # hashed code retrieved from password
         # re-[instate|initialize] user's password to it's previous value
         self.password = acc_password
@@ -493,7 +534,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         return verified
 
 
-# noinspection PyUnresolvedReferences,PyProtectedMember
+class SecurityQuestion(models.Model):
+    question = models.CharField(max_length=255, blank=False, null=False, unique=True, )
+    added_on = models.DateTimeField(auto_now_add=True, )
+    usable = models.BooleanField(default=True, )
+
+    class Meta:
+        ordering = ('added_on',)
+
+
 class Metadata(models.Model):
     """
     Contains additional data used for user account 'house-keeping'
@@ -503,6 +552,9 @@ class Metadata(models.Model):
     :cvar verification_code hashed short-live code expected to be used for account verification
     """
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, primary_key=True, )
+    security_question = models.ForeignKey(SecurityQuestion, on_delete=models.SET_DEFAULT,
+                                          default=default_security_question, )
+    security_question_answer = models.CharField(max_length=PASSWORD_LENGTH, blank=False, null=True)
     temporary_password = models.CharField(max_length=PASSWORD_LENGTH, blank=False, null=True)
     verification_code = models.CharField(max_length=PASSWORD_LENGTH, blank=False, null=True)
     tp_gen_time = models.DateTimeField(_('temporary password generation time'), blank=True, null=True)
@@ -510,12 +562,17 @@ class Metadata(models.Model):
     deactivation_time = models.DateTimeField(_("user account's deactivation time"), blank=True, null=True)
 
     def save(self, *args, **kwargs):
-        raw_password = self.temporary_password
         raw_code = self.verification_code
+        raw_password = self.temporary_password
+        raw_security_question_answer = self.temporary_password
         if valid_str(raw_code):
             self.verification_code = self._hash_code(raw_code)
         if valid_str(raw_password):
             self.temporary_password = self._hash_code(raw_password)
+        # will set an unusable password if no answer will be provided
+        self.security_question_answer = self._hash_code(raw_security_question_answer)
+        if self.security_question is None:
+            self.security_question = default_security_question()
         super(Metadata, self).save(*args, **kwargs)
 
     @property
@@ -536,13 +593,25 @@ class Metadata(models.Model):
         """:returns True if `raw_code` matches `self.verification_code`"""
         return self.__verify_this_against_other_code(self.verification_code, raw_code)
 
+    def check_security_question_answer(self, raw_answer) -> bool:
+        """:returns True if `raw_answer` matches `self.security_question_answer`"""
+        return self.__verify_this_against_other_code(self.security_question_answer, raw_answer)
+
+    # noinspection PyUnresolvedReferences
+    def is_unusable_code(self, hash_code) -> bool:
+        user = self.user
+        user.password = hash_code
+        return not user.has_usable_password()
+
+    # noinspection PyUnresolvedReferences,PyProtectedMember
+    def _hash_code(self, raw_code):
+        return self.user._hash_code(raw_code)
+
+    # noinspection PyUnresolvedReferences
     def __verify_this_against_other_code(self, this, other):
         user = self.user
         user.password = this
         return user.check_password(other)
-
-    def _hash_code(self, raw_code):
-        return self.user._hash_code(raw_code)
 
 
 class AccessLog(models.Model):
@@ -598,11 +667,3 @@ class FailedSignInAttempt(models.Model):
 
     class Meta:
         ordering = ('-attempt_date',)
-
-
-class SecurityQuestion(models.Model):
-    question = models.CharField(max_length=255, blank=False, null=False, unique=True, )
-    added_on = models.DateTimeField(auto_now_add=True, )
-
-    class Meta:
-        ordering = ('added_on',)
