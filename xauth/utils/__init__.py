@@ -1,3 +1,6 @@
+from rest_framework import status, response as drf_response
+
+
 def valid_str(string, length: int = 1) -> bool:
     """
     Checks for `string`'s null(not None and length) status
@@ -28,3 +31,19 @@ def reset_empty_nullable_to_null(obj, fields):
         except AttributeError:
             failed.append(f)
     return failed
+
+
+def get_204_wrapped_response(r: drf_response.Response):
+    if not r.data or r.status_code == status.HTTP_204_NO_CONTENT:
+        return drf_response.Response(status=status.HTTP_204_NO_CONTENT)
+    return get_wrapped_response(r)
+
+
+def get_wrapped_response(r: drf_response.Response):
+    from .response import APIResponse
+    from .settings import XENTLY_AUTH
+    if XENTLY_AUTH.get('WRAP_DRF_RESPONSE', True):
+        _response = APIResponse(payload=r.data, status_code=r.status_code)
+        return drf_response.Response(_response.response(), status=_response.status_code)
+    else:
+        return r

@@ -161,6 +161,7 @@ class Token(TokenKey):
     Defaults to 60days from `activation_date` if an alternative is not provided
     :param payload_key key for `payload` during claims generations
     """
+    __TOKEN_ENCRYPTED = settings.XENTLY_AUTH.get('REQUEST_TOKEN_ENCRYPTED', True)
 
     def __init__(self, payload, activation_date: datetime = None, expiry_period: timedelta = None,
                  payload_key: str = 'payload', signing_algorithm=JWT_SIG_ALG):
@@ -235,7 +236,7 @@ class Token(TokenKey):
             self.refresh()
         return dict(normal=self.normal, encrypted=self.encrypted)
 
-    def get_claims(self, token=None, encrypted=True):
+    def get_claims(self, token=None, encrypted: bool = __TOKEN_ENCRYPTED):
         token = self.encrypted if not token else token
         assert token is not None, "Call refresh() first or provide a token"
         token = token.decode() if isinstance(token, bytes) else token
@@ -243,7 +244,7 @@ class Token(TokenKey):
         claims = jwt.JWT(key=self.public_signing_key, jwt=tk).claims
         return json.loads(claims)
 
-    def get_payload(self, token=None, encrypted=True):
+    def get_payload(self, token=None, encrypted: bool = __TOKEN_ENCRYPTED):
         try:
             return self.get_claims(token, encrypted).get(self.payload_key, None)
         except AssertionError:

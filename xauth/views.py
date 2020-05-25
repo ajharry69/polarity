@@ -6,6 +6,7 @@ from rest_framework.response import Response
 
 from .permissions import *
 from .serializers import *
+from .utils import get_204_wrapped_response, get_wrapped_response
 
 
 class ProfileView(generics.RetrieveUpdateDestroyAPIView):
@@ -13,38 +14,36 @@ class ProfileView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ProfileSerializer
     permission_classes = [IsSuperUser, IsAuthenticatedAndOwner, ]
 
+    def get(self, request, *args, **kwargs):
+        return get_204_wrapped_response(super().get(request, *args, **kwargs))
+
+    def put(self, request, *args, **kwargs):
+        return get_wrapped_response(super().put(request, *args, **kwargs))
+
+    def patch(self, request, *args, **kwargs):
+        return get_wrapped_response(super().patch(request, *args, **kwargs))
+
+    def delete(self, request, *args, **kwargs):
+        return get_204_wrapped_response(super().delete(request, *args, **kwargs))
+
 
 class SignUpView(generics.CreateAPIView):
     queryset = get_user_model().objects.all()
     serializer_class = SignUpSerializer
     permission_classes = [permissions.AllowAny, ]
 
+    def post(self, request, *args, **kwargs):
+        return get_wrapped_response(super().post(request, *args, **kwargs))
+
 
 class SignInView(views.APIView):
-    permission_classes = [permissions.AllowAny, ]
+    permission_classes = [permissions.IsAuthenticated, ]
 
     @staticmethod
     def post(request, format=None):
-        # should contain a user object if Basic authentication(from AuthBackend) was successful
-        user = request.user
-        if isinstance(user, AnonymousUser) or user is None:
-            username = request.data.get('username', None)
-            password = request.data.get('password', None)
-            try:
-                user = get_user_model().objects.get_by_natural_key(username=username)
-                if user.check_password(raw_password=password) is False:
-                    # invalid password
-                    return Response({
-                        'error': 'invalid username and password'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-            except get_user_model().DoesNotExist:
-                # user not found
-                return Response({
-                    'error': 'user account does not exist'
-                }, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = AuthSerializer(user, )
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # authentication logic is by default handled by the auth-backend
+        serializer = AuthSerializer(request.user, context={'request': request}, )
+        return get_wrapped_response(Response(serializer.data, status=status.HTTP_200_OK))
 
 
 class VerificationView(views.APIView):

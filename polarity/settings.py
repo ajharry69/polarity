@@ -118,10 +118,12 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 REST_FRAMEWORK = {
-    # 'DEFAULT_AUTHENTICATION_CLASSES': [
-    #     'rest_framework.authentication.BasicAuthentication',
-    #     'rest_framework.authentication.SessionAuthentication',
-    # ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'xauth.authentication.BasicTokenAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'EXCEPTION_HANDLER': 'xauth.utils.exceptions.xauth_exception_handler',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
     'TEST_REQUEST_DEFAULT_FORMAT': 'json',
@@ -148,6 +150,10 @@ XENTLY_AUTH = {
     # period within which a user is considered new since account creation date
     'NEWBIE_VALIDITY_PERIOD': timedelta(days=1),
     'AUTO_HASH_PASSWORD_ON_SAVE': True,
+    'WRAP_DRF_RESPONSE': True,
+    'REQUEST_TOKEN_ENCRYPTED': True,
+    'POST_REQUEST_USERNAME_FIELD': 'username',
+    'POST_REQUEST_PASSWORD_FIELD': 'password',
 }
 
 CELERY_BROKER_URL = 'pyamqp://guest@localhost//'

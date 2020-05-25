@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
@@ -507,6 +507,7 @@ class Metadata(models.Model):
     verification_code = models.CharField(max_length=PASSWORD_LENGTH, blank=False, null=True)
     tp_gen_time = models.DateTimeField(_('temporary password generation time'), blank=True, null=True)
     vc_gen_time = models.DateTimeField(_('verification code generation time'), blank=True, null=True)
+    deactivation_time = models.DateTimeField(_("user account's deactivation time"), blank=True, null=True)
 
     def save(self, *args, **kwargs):
         raw_password = self.temporary_password
@@ -597,3 +598,11 @@ class FailedSignInAttempt(models.Model):
 
     class Meta:
         ordering = ('-attempt_date',)
+
+
+class SecurityQuestion(models.Model):
+    question = models.CharField(max_length=255, blank=False, null=False, unique=True, )
+    added_on = models.DateTimeField(auto_now_add=True, )
+
+    class Meta:
+        ordering = ('added_on',)
