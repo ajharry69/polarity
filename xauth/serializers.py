@@ -34,13 +34,10 @@ class AuthSerializer(AuthTokenOnlySerializer):
 
 
 class SignUpSerializer(AuthSerializer):
-    password = serializers.CharField(write_only=True, )
+    password = serializers.CharField(write_only=True, allow_null=True, allow_blank=True, )
 
     class Meta(AuthSerializer.Meta):
         fields = AuthSerializer.Meta.fields + get_user_model().WRITE_ONLY_FIELDS
-
-    def create(self, validated_data):
-        return super().create(validated_data)
 
 
 class SecurityQuestionSerializer(serializers.HyperlinkedModelSerializer):

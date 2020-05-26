@@ -122,6 +122,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         use email as the username if it wasn't provided
         :param auto_hash_password if True, `self.password` will be hashed before saving to database. Default(`False`)
         """
+        # TODO: split name if contains space to surname, firstname, lastname
         self.provider = self.provider if valid_str(self.provider) else self.__DEFAULT_PROVIDER
         _username = self.username
         self.username = self.normalize_username(_username if _username and len(_username) > 0 else self.email)
@@ -378,6 +379,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def activate_account(self, security_question_answer):
         """
+        TODO: Test
+
         :param security_question_answer: raw answer to user's security question to be verified against
         database's answer for correctness (match)
         :return: tuple (Token, message) if user's account was activated successfully (Token, None) else

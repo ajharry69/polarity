@@ -47,3 +47,8 @@ def get_wrapped_response(r: drf_response.Response):
         return drf_response.Response(_response.response(), status=_response.status_code)
     else:
         return r
+
+
+def is_http_response_success(status_code: int) -> bool:
+    import re
+    return re.match(r'^2\d{2}$', str(status_code)) is not None

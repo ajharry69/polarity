@@ -18,7 +18,7 @@ class SecurityQuestionView(viewsets.ModelViewSet):
 class ProfileView(generics.RetrieveUpdateDestroyAPIView):
     queryset = get_user_model().objects.all()
     serializer_class = ProfileSerializer
-    permission_classes = [IsSuperUser, IsAuthenticatedAndOwner, ]
+    permission_classes = [IsOwnerOrSuperuserOrReadOnly, ]
 
     def get(self, request, *args, **kwargs):
         return get_204_wrapped_response(super().get(request, *args, **kwargs))
@@ -33,7 +33,7 @@ class ProfileView(generics.RetrieveUpdateDestroyAPIView):
         return get_204_wrapped_response(super().delete(request, *args, **kwargs))
 
     def perform_update(self, serializer):
-        serializer.save(auto_hash_password=False)
+        serializer.save(auto_hash_password=False)  # TODO: seem to be having no effect
 
 
 class SignUpView(generics.CreateAPIView):

@@ -17,6 +17,7 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
     auth_scheme = 'Bearer'
 
     def authenticate(self, request):
+        address_header_payload = request.META.get('HTTP_X_Forwarded_For', request.META.get('REMOTE_ADDR', None))
         auth = None
         auth_header = drf_auth.get_authorization_header(request).decode()
         if valid_str(auth_header) is True:
@@ -36,10 +37,35 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
             # attempt to authenticate from POST-request data
             username, password = self.get_post_request_username_and_password(request=request)
             user = self.get_user_with_username_and_password(username=username, password=password)
-        return self.__get_wrapped_authentication_response(request, user, auth)
+        return self.__get_wrapped_authentication_response(address_header_payload, user, auth)
 
     def authenticate_header(self, request):
         return 'Provide a Bearer-token, Basic or POST-request with username and password'
+
+    def get_user_from_jwt_token(self, token):
+        """
+        Gets and returns `user` object who the `token` payload data refer
+
+        :raises AuthenticationFailed if token's payload data does not match to any user in the database
+        :param token: JWT token
+        :return: user object
+        """
+        self.auth_scheme = 'Bearer'
+        try:
+            user_payload = Token(None, ).get_payload(token=token)
+            user_id = user_payload.get('id', None) if isinstance(user_payload, dict) else user_payload
+            # todo: check password reset and code verification tokens are only used for those specific requests
+
+            try:
+                return get_user_model().objects.get(pk=user_id) if user_id else None
+            except get_user_model().DoesNotExist as ex:
+                raise drf_exception.AuthenticationFailed(f'user not found#{ex.args[0]}')
+        except jwt.JWTExpired as ex:
+            raise drf_exception.AuthenticationFailed(f'expired token#{ex.args[0]}')
+        except jwt.JWTNotYetValid as ex:
+            raise drf_exception.AuthenticationFailed(f'token not ready for use#{ex.args[0]}')
+        except jwe.JWException as ex:
+            raise drf_exception.AuthenticationFailed(f'invalid token#{ex.args[0]}')
 
     def get_user_from_basic_or_token_auth_scheme(self, auth_scheme_and_credentials):
         """
@@ -66,31 +92,6 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
             return self.get_user_with_username_and_password(username=username, password=password), None
         else:
             return None  # unknown/unsupported authentication scheme
-
-    def get_user_from_jwt_token(self, token):
-        """
-        Gets and returns `user` object who the `token` payload data refer
-
-        :raises AuthenticationFailed if token's payload data does not match to any user in the database
-        :param token: JWT token
-        :return: user object
-        """
-        self.auth_scheme = 'Bearer'
-        try:
-            user_payload = Token(None, ).get_payload(token=token)
-            user_id = user_payload.get('id', None) if isinstance(user_payload, dict) else user_payload
-            # todo: check password reset and code verification tokens are only used for those specific requests
-
-            try:
-                return get_user_model().objects.get(pk=user_id) if user_id else None
-            except get_user_model().DoesNotExist as ex:
-                raise drf_exception.AuthenticationFailed(f'user not found#{ex.args[0]}')
-        except jwt.JWTExpired as ex:
-            raise drf_exception.AuthenticationFailed(f'expired token#{ex.args[0]}')
-        except jwt.JWTNotYetValid as ex:
-            raise drf_exception.AuthenticationFailed(f'token not ready for use#{ex.args[0]}')
-        except jwe.JWException as ex:
-            raise drf_exception.AuthenticationFailed(f'invalid token#{ex.args[0]}')
 
     def get_user_with_username_and_password(self, username, password):
         """
@@ -141,17 +142,44 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
         :param request `django.http.HttpRequest`
         :return: tuple of username and password i.e. (username, password)
         """
-        post, data = request.POST, request.data
-        _un_key = settings.XENTLY_AUTH.get('POST_REQUEST_USERNAME_FIELD', 'username')
-        _pw_key = settings.XENTLY_AUTH.get('POST_REQUEST_PASSWORD_FIELD', 'password')
-        return post.get(_un_key, data.get(_un_key, None)), post.get(_pw_key, data.get(_pw_key, None))
+        try:
+            post, request_data = request.POST, request.data
+            _un_key = settings.XENTLY_AUTH.get('POST_REQUEST_USERNAME_FIELD', 'username')
+            _pw_key = settings.XENTLY_AUTH.get('POST_REQUEST_PASSWORD_FIELD', 'password')
+
+            if isinstance(request_data, dict):
+                # check key count 2
+                if len(request_data.keys()) == 2:
+                    # probably a POST request sign-in request
+                    username = post.get(_un_key, request_data.get(_un_key, None))
+                    password = post.get(_pw_key, request_data.get(_pw_key, None))
+                    return username, password
+        except AttributeError:
+            pass
+        return None, None
 
     @staticmethod
-    def __get_wrapped_authentication_response(request, user, auth):
+    def get_client_ip(addresses_str):
+        """
+        [X-Forwarded-For header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For)
+
+        :param addresses_str: string of IP addresses separated with commas(,) and or
+        spaces much like the standard value of a HTTP X-Forwarded-For header
+        :return: the first IP address from a cleansed comma split of `addresses_str`
+        or None if `addresses_str` is None
+        """
+        if addresses_str:
+            # addresses where provided, trim off spaces or double
+            ip_addresses = re.sub(r'^,+|\s+,*|,+$', '', addresses_str).split(',')
+            return ip_addresses[0] if len(ip_addresses) > 0 else ip_addresses
+        else:
+            return None
+
+    def __get_wrapped_authentication_response(self, addresses_str, user, auth):
         if not user:
             return None
         if user.is_active:
-            # todo: accompany request's IP address header with the user
+            user.device_ip = self.get_client_ip(addresses_str)
             return user, auth
         else:
             raise drf_exception.AuthenticationFailed('the account is inactive')
