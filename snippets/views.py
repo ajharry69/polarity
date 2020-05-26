@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from rest_framework import renderers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,7 +11,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     """
     This viewset automatically provides `list` and `detail` actions.
     """
-    queryset = User.objects.all().order_by('first_name', 'last_name', 'username')
+    queryset = get_user_model().objects.all().order_by('first_name', 'last_name', 'username')
     serializer_class = UserSerializer
 
 

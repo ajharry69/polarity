@@ -11,8 +11,12 @@ https://docs.djangoproject.com/en/3.0/ref/settings/
 """
 
 import os
-
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
+from datetime import timedelta
+
+from django.conf import settings
+from django.utils.encoding import force_str
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Quick-start development settings - unsuitable for production
@@ -39,8 +43,10 @@ INSTALLED_APPS = [
     'api.apps.ApiConfig',
     'quickstart.apps.QuickstartConfig',
     'snippets.apps.SnippetsConfig',
+    'xauth.apps.XauthConfig',
     'rest_framework',
     'django_extensions',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -80,9 +86,18 @@ WSGI_APPLICATION = 'polarity.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        'NAME': os.path.join(BASE_DIR, 'polarity.sqlite3'),
     }
 }
+
+# Use recommended argon2 for password hashing
+# https://docs.djangoproject.com/en/3.0/topics/auth/passwords/#using-argon2-with-django
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+]
 
 # Password validation
 # https://docs.djangoproject.com/en/3.0/ref/settings/#auth-password-validators
@@ -103,9 +118,54 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'xauth.authentication.BasicTokenAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'EXCEPTION_HANDLER': 'xauth.utils.exceptions.xauth_exception_handler',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10
+    'PAGE_SIZE': 10,
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
 }
+
+XENTLY_AUTH = {
+    # occasionally included in emails sent by the API to your users for familiarity
+    'APP_NAME': 'Xently',
+    'TOKEN_KEY': force_str(SECRET_KEY),
+    'TOKEN_EXPIRY': timedelta(days=60),
+    # string. Email addresses to which account / auth-related replies are to be sent.
+    # Also permitted: "Name <email-address>"
+    'REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES': [
+        settings.EMAIL_HOST_USER
+    ],
+    # string. Email used to send verification code.
+    # Also permitted: "Name <email-address>"
+    'ACCOUNTS_EMAIL': settings.EMAIL_HOST_USER,
+    'ACCOUNTS_EMAIL_PASSWORD': settings.EMAIL_HOST_PASSWORD,
+    'VERIFICATION_CODE_LENGTH': 6,
+    'TEMPORARY_PASSWORD_LENGTH': 8,
+    'VERIFICATION_CODE_EXPIRY': timedelta(hours=1),
+    'TEMPORARY_PASSWORD_EXPIRY': timedelta(minutes=30),
+    # period within which a user is considered new since account creation date
+    'NEWBIE_VALIDITY_PERIOD': timedelta(days=1),
+    'AUTO_HASH_PASSWORD_ON_SAVE': True,
+    'WRAP_DRF_RESPONSE': True,
+    'REQUEST_TOKEN_ENCRYPTED': True,
+    'POST_REQUEST_USERNAME_FIELD': 'username',
+    'POST_REQUEST_PASSWORD_FIELD': 'password',
+    'ENFORCE_ACCOUNT_VERIFICATION': True,
+}
+
+CELERY_BROKER_URL = 'pyamqp://guest@localhost//'
+
+CELERY_TASK_SERIALIZER = 'json'
+
+CELERY_RESULT_BACKEND = 'django-db'
+
+CELERY_CACHE_BACKEND = 'django-cache'
+
+AUTH_USER_MODEL = 'xauth.User'
 
 # Internationalization
 # https://docs.djangoproject.com/en/3.0/topics/i18n/
