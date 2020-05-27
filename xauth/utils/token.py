@@ -161,11 +161,11 @@ class Token(TokenKey):
     Defaults to 60days from `activation_date` if an alternative is not provided
     :param payload_key key for `payload` during claims generations
     """
-    __TOKEN_ENCRYPTED = settings.XENTLY_AUTH.get('REQUEST_TOKEN_ENCRYPTED', True)
+    __TOKEN_ENCRYPTED = settings.XAUTH.get('REQUEST_TOKEN_ENCRYPTED', True)
 
     def __init__(self, payload, activation_date: datetime = None, expiry_period: timedelta = None,
                  payload_key: str = 'payload', signing_algorithm=JWT_SIG_ALG):
-        password = settings.XENTLY_AUTH.get('TOKEN_KEY', force_str(settings.SECRET_KEY))
+        password = settings.XAUTH.get('TOKEN_KEY', force_str(settings.SECRET_KEY))
         super().__init__(password=password, signing_algorithm=signing_algorithm)
         self._normal = None
         self._encrypted = None
@@ -206,7 +206,7 @@ class Token(TokenKey):
         """
         issue_date = datetime.now()
         self.activation_date = issue_date if not self.activation_date else self.activation_date
-        self.expiry_period = settings.XENTLY_AUTH.get('TOKEN_EXPIRY', timedelta(
+        self.expiry_period = settings.XAUTH.get('TOKEN_EXPIRY', timedelta(
             days=60)) if self.expiry_period is None else self.expiry_period
 
         expiry_date = self.activation_date + self.expiry_period
@@ -264,7 +264,7 @@ class Token(TokenKey):
             'alg': "ECDH-ES",
             'enc': "A256GCM",
         }
-        # header = settings.XENTLY_AUTH.get('JWT_ENC_HEADERS', {
+        # header = settings.XAUTH.get('JWT_ENC_HEADERS', {
         #     "alg": "A256KW",
         #     "enc": "A256CBC-HS512",
         # })

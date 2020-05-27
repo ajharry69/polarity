@@ -69,6 +69,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     __DEVICE_IP = None
     __NEWBIE_GP = XENTLY_AUTH.get('NEWBIE_VALIDITY_PERIOD', timedelta(days=1))
     __AUTO_HASH = XENTLY_AUTH.get('AUTO_HASH_PASSWORD_ON_SAVE', True)
+    __ENFORCE_ACCOUNT_VERIFICATION = XENTLY_AUTH.get('ENFORCE_ACCOUNT_VERIFICATION', True)
     __PROVIDERS = [(k, k) for k, _ in enums.AuthProvider.__members__.items()]
     __DEFAULT_PROVIDER = enums.AuthProvider.EMAIL.name
     username = models.CharField(db_index=True, max_length=150, unique=True)
@@ -81,7 +82,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     provider = models.CharField(choices=__PROVIDERS, max_length=20, default=__DEFAULT_PROVIDER)
     is_superuser = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
-    is_verified = models.BooleanField(default=False)
+    # if ENFORCE == True; then every new user account should be unverified(False) by default else otherwise
+    is_verified = models.BooleanField(default=not __ENFORCE_ACCOUNT_VERIFICATION)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -214,7 +216,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         otherwise full-access token is returned
         """
         expiry = XENTLY_AUTH.get('TOKEN_EXPIRY', timedelta(days=60))
-        requires_verification = not self.is_verified and XENTLY_AUTH.get('ENFORCE_ACCOUNT_VERIFICATION', True)
+        requires_verification = not self.is_verified and self.__ENFORCE_ACCOUNT_VERIFICATION
         return self.verification_token if requires_verification else Token(self._jsonified(), expiry_period=expiry)
 
     @property

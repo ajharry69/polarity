@@ -1,7 +1,7 @@
 from django.conf import settings
 
 try:
-    XENTLY_AUTH = settings.XENTLY_AUTH
+    XENTLY_AUTH = settings.XAUTH
 except AttributeError:
     XENTLY_AUTH = {}
 

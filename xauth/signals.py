@@ -25,7 +25,7 @@ def on_user_post_save(sender, instance, created, **kwargs):
     """
     user = instance
     if not user.is_verified:
-        user.request_verification()  # TODO: Send mail by default
+        user.request_verification()
 
 
 def on_post_migrate(sender, **kwargs):

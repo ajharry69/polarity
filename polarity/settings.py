@@ -129,7 +129,7 @@ REST_FRAMEWORK = {
     'TEST_REQUEST_DEFAULT_FORMAT': 'json',
 }
 
-XENTLY_AUTH = {
+XAUTH = {
     # occasionally included in emails sent by the API to your users for familiarity
     'APP_NAME': 'Xently',
     'TOKEN_KEY': force_str(SECRET_KEY),
