@@ -12,6 +12,8 @@ urlpatterns = [
     path('sign-in/', view=views.SignInView.as_view(), name='sign-in'),
     path('sign-up/', view=views.SignUpView.as_view(), name='sign-up'),
     path('profile/<int:pk>/', view=views.ProfileView.as_view(), name='profile'),
-    path('verify/', view=views.VerificationView.as_view(), name='verify'),
-    path('password-reset/', view=views.PasswordResetView.as_view(), name='password-reset'),
+    path('verification-code/verify/', view=views.VerificationCodeVerifyView.as_view(), name='verification-code-verify'),
+    path('verification-code/send/', view=views.VerificationCodeSendView.as_view(), name='verification-code-send'),
+    path('password-reset/verify/', view=views.PasswordResetView.as_view(), name='password-reset-verify'),
+    path('password-reset/send/', view=views.PasswordResetSendView.as_view(), name='password-reset-send'),
 ]

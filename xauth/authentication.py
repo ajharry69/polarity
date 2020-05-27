@@ -19,8 +19,9 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
     def authenticate(self, request):
         address_header_payload = request.META.get('HTTP_X_Forwarded_For', request.META.get('REMOTE_ADDR', None))
         auth = None
-        auth_header = drf_auth.get_authorization_header(request).decode()
-        if valid_str(auth_header) is True:
+        authorization_header = drf_auth.get_authorization_header(request)
+        auth_header = authorization_header.decode() if isinstance(authorization_header, bytes) else authorization_header
+        if valid_str(auth_header):
             # an authorization header was provided
             # separate auth-scheme/auth-type(e.g. Bearer, Token, Basic) from auth-data/auth-payload(e.g. base64url
             # encoding of username & password combination for Basic auth or Bearer|Token value/data)

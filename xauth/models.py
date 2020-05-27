@@ -552,8 +552,6 @@ class Metadata(models.Model):
             self.verification_code = self._hash_code(raw_code)
         if valid_str(raw_password):
             self.temporary_password = self._hash_code(raw_password)
-        if self.security_question is None:
-            self.security_question = default_security_question()
         self.__reinitialize_security_answer()
         super(Metadata, self).save(*args, **kwargs)
 

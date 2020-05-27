@@ -1,15 +1,11 @@
-from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
 
+from xauth.tests import *
 from xauth.utils import is_http_response_success
 
 
-class ProfileViewTestCase(APITestCase):
-    @staticmethod
-    def get_response_data_with_key(response, data_key: str):
-        return response.data.get('payload').get(data_key)
+class ProfileViewTestCase(UserAPITestCase):
 
     def put_user_data(self, removable_keys: list = None):
         """changes last name"""
@@ -80,31 +76,6 @@ class ProfileViewTestCase(APITestCase):
         if delete_code:
             self.assertEqual(delete_response.status_code, delete_code)
 
-    old_first_name, new_first_name = 'John', 'Stephenson'
-    old_last_name, new_last_name = 'Doe', 'Doug'
-    username, email, password = 'user', 'user@mail-domain.com', 'password'
-    username_1, email_1, password_1 = 'user1', 'user1@mail-domain.com', 'password'
-    superuser_username, superuser_email, superuser_password = 'admin', 'admin@mail-domain.com', 'pV55M0r6'
-
-    def setUp(self) -> None:
-        self.superuser = get_user_model().objects.create_superuser(
-            username=self.superuser_username,
-            email=self.superuser_email,
-            password=self.superuser_password,
-        )
-        self.user = get_user_model().objects.create_user(
-            username=self.username,
-            email=self.email,
-            password=self.password,
-            first_name=self.old_first_name,
-            last_name=self.old_last_name,
-        )
-        self.user1 = get_user_model().objects.create_user(
-            username=self.username_1,
-            email=self.email_1,
-            password=self.password_1,
-        )
-
     def test_GET_profile_returns_200_while_PUT_PATCH_OR_DELETE_without_authorization_returns_401(self):
         self.client.credentials()
         self.assert_request_methods_status_codes(
@@ -135,13 +106,13 @@ class ProfileViewTestCase(APITestCase):
             put_patch_code=status.HTTP_200_OK,
         )
 
-    def test_get_profile_for_existing_account_returns_200(self):
+    def test_GET_profile_for_existing_account_returns_200(self):
         from requests.auth import _basic_auth_str
         self.client.credentials(HTTP_AUTHORIZATION=_basic_auth_str(self.username, self.password))
         response = self.client.get(reverse('xauth:profile', kwargs={'pk': self.user.id}, ), )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_get_profile_for_non_existing_account_returns_404(self):
+    def test_GET_profile_for_non_existing_account_returns_404(self):
         from requests.auth import _basic_auth_str
         self.client.credentials(HTTP_AUTHORIZATION=_basic_auth_str(self.username, self.password))
         response = self.client.get(reverse('xauth:profile', kwargs={'pk': 123}), )

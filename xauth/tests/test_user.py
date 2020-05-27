@@ -1,5 +1,4 @@
 from django.utils.datetime_safe import datetime
-from rest_framework.test import APITestCase
 
 from xauth.models import User
 from xauth.tests import *

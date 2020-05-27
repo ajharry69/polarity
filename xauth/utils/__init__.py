@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import status, response as drf_response
 
 
@@ -43,12 +45,32 @@ def get_wrapped_response(r: drf_response.Response):
     from .response import APIResponse
     from .settings import XENTLY_AUTH
     if XENTLY_AUTH.get('WRAP_DRF_RESPONSE', True):
-        _response = APIResponse(payload=r.data, status_code=r.status_code)
+        debug_message, message, payload, response_data, response_status_code = None, None, None, r.data, r.status_code
+        if isinstance(response_data, str):
+            message = response_data
+            if is_http_response_success(response_status_code):
+                # the response could probably be expected as payload
+                payload = response_data
+        elif isinstance(response_data, dict):
+            message = response_data.get('error', None)
+            if not valid_str(message):
+                # payload should not be None
+                payload = response_data
+        else:
+            payload = response_data
+
+        if valid_str(message):
+            try:
+                message, debug_message = tuple(re.sub(r'^#|#$', '', message).split('#', 1))
+            except ValueError:
+                pass
+
+        _response = APIResponse(payload=payload, message=message, debug_message=debug_message,
+                                status_code=response_status_code)
         return drf_response.Response(_response.response(), status=_response.status_code)
     else:
         return r
 
 
 def is_http_response_success(status_code: int) -> bool:
-    import re
     return re.match(r'^2\d{2}$', str(status_code)) is not None

@@ -16,11 +16,12 @@ class ProfileSerializer(serializers.ModelSerializer):
 
 
 class AuthTokenOnlySerializer(serializers.HyperlinkedModelSerializer):
-    token = serializers.DictField(source='token.tokens', read_only=True, )
+    normal = serializers.CharField(source='token.tokens.normal', read_only=True, )
+    encrypted = serializers.CharField(source='token.tokens.encrypted', read_only=True, )
 
     class Meta:
         model = get_user_model()
-        fields = 'token',
+        fields = 'normal', 'encrypted',
 
 
 class AuthSerializer(AuthTokenOnlySerializer):

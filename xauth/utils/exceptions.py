@@ -1,7 +1,7 @@
 import re
 
 from django.utils.datetime_safe import datetime
-from rest_framework import views
+from rest_framework import views, response as drf_response
 
 from xauth.utils.response import APIResponse
 
@@ -40,7 +40,7 @@ def text_with_dated_timestamps(txt: str):
             st.insert(3, tts[1])
         return ''.join(st)
     except TypeError as te:
-        return f'{te.args[0]}'
+        return None
 
 
 def xauth_exception_handler(exception, context):
@@ -51,18 +51,22 @@ def xauth_exception_handler(exception, context):
 
     erd = response.data
     __field_detail = 'detail'
-    if __field_detail in erd:
+    if isinstance(erd, dict) and __field_detail in erd:
         ed = str(erd[__field_detail])
-
-        msg, d_msg, delimiter = ed, None, '#'
-        if delimiter in ed:
-            msg, d_msg = tuple(ed.split(delimiter, 1))
-
-        api_response = APIResponse(message=msg, debug_message=text_with_dated_timestamps(d_msg),
-                                   status_code=response.status_code)
+        api_response = wrap_error_response(ed, response)
         # Update response's data dictionary
         erd.update(api_response.response())
-
         del response.data[__field_detail]
+    if isinstance(erd, list):
+        api_response = wrap_error_response('#'.join(erd), response)
+        return drf_response.Response(api_response.response(), status=response.status_code)
 
     return response
+
+
+def wrap_error_response(ed, response):
+    msg, d_msg, delimiter = ed, None, '#'
+    if delimiter in ed:
+        msg, d_msg = tuple(ed.split(delimiter, 1))
+    return APIResponse(message=msg, debug_message=text_with_dated_timestamps(d_msg),
+                       status_code=response.status_code)

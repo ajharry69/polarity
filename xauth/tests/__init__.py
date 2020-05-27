@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from rest_framework.test import APITestCase
 
 from xauth.models import Metadata, SecurityQuestion
 
@@ -28,3 +29,47 @@ def update_metadata(user, sec_quest=None, sec_ans=None, tpass=None, vcode=None, 
 
 def create_security_question(question: str = 'What is your favourite color?', usable: bool = True):
     return SecurityQuestion.objects.create(question=question, usable=usable)
+
+
+class UserAPITestCase(APITestCase):
+    @staticmethod
+    def get_response_data_with_key(response, data_key: str):
+        return response.data.get('payload').get(data_key)
+
+    old_first_name, old_last_name = 'John', 'Doe'
+    new_first_name, new_last_name = 'Stephenson', 'Doug'
+    username, email, password = 'user', 'user@mail-domain.com', 'password'
+    username_1, email_1, password_1 = 'user1', 'user1@mail-domain.com', 'password'
+    superuser_username, superuser_email, superuser_password = 'admin', 'admin@mail-domain.com', 'pV55M0r6'
+
+    def setUp(self) -> None:
+        self.superuser = get_user_model().objects.create_superuser(
+            username=self.superuser_username,
+            email=self.superuser_email,
+            password=self.superuser_password,
+        )
+        self.user = get_user_model().objects.create_user(
+            username=self.username,
+            email=self.email,
+            password=self.password,
+            first_name=self.old_first_name,
+            last_name=self.old_last_name,
+        )
+        self.user1 = get_user_model().objects.create_user(
+            username=self.username_1,
+            email=self.email_1,
+            password=self.password_1,
+        )
+
+
+class CodeVerificationAPITestCase(UserAPITestCase):
+
+    def code_password_verification(self, response, token):
+        from django.utils.datetime_safe import datetime
+
+        user = get_user_model().objects.get_by_natural_key(self.user.username)
+        user.is_verified = True
+        encrypted_token = self.get_response_data_with_key(response, 'encrypted')
+        token_expiry = token.get_claims(encrypted_token, encrypted=True, ).get('exp', 0)
+        token_expiry_days = int((token_expiry - int(datetime.now().strftime('%s'))) / (60 * 60 * 24))
+        return token_expiry_days, user
