@@ -6,12 +6,13 @@ from xauth.models import SecurityQuestion
 
 class ProfileSerializer(serializers.ModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='xauth:profile')
-    groups = serializers.HyperlinkedRelatedField(view_name='group-detail', many=True, read_only=True)
+
+    # groups = serializers.HyperlinkedRelatedField(view_name='group-detail', many=True, read_only=True)
 
     class Meta:
         model = get_user_model()
-        fields = get_user_model().PUBLIC_READ_WRITE_FIELDS + ('url', 'groups',)
-        read_only_fields = get_user_model().READ_ONLY_FIELDS + ('groups',)
+        fields = get_user_model().PUBLIC_READ_WRITE_FIELDS + ('url',)
+        read_only_fields = get_user_model().READ_ONLY_FIELDS
 
 
 class AuthTokenOnlySerializer(serializers.HyperlinkedModelSerializer):

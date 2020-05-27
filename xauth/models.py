@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
-from django.utils import timezone, encoding
+from django.utils import timezone
 from django.utils.datetime_safe import datetime as dj_datetime, date as dj_date
 from django.utils.translation import gettext_lazy as _
 
@@ -67,8 +67,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     Guidelines: https://docs.djangoproject.com/en/3.0/topics/auth/customizing/
     """
     __DEVICE_IP = None
-    __DEVICE_ID = None
-    __NEWBIE_GP = XENTLY_AUTH.get('NEWBIE_VALIDITY_PERIOD', None)
+    __NEWBIE_GP = XENTLY_AUTH.get('NEWBIE_VALIDITY_PERIOD', timedelta(days=1))
     __AUTO_HASH = XENTLY_AUTH.get('AUTO_HASH_PASSWORD_ON_SAVE', True)
     __PROVIDERS = [(k, k) for k, _ in enums.AuthProvider.__members__.items()]
     __DEFAULT_PROVIDER = enums.AuthProvider.EMAIL.name
@@ -161,8 +160,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def is_newbie(self, period: timedelta = __NEWBIE_GP):
         """
-        Flags user as a new if account(user object) is lasted for at most `period`
-        since the value of `self.created_at`
+        Flags user as a new if account(user object) has lasted for at most `period`
+        since `self.created_at`
         :return: bool. `True` if considered new `False` otherwise
         """
         period = timedelta(seconds=15) if period is None else period
@@ -201,34 +200,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         return _age
 
     @property
-    def uidb64(self):
-        """
-        :return: The user’s id encoded in base 64.
-        """
-        return encoding.force_bytes(f'{self.id}')
-
-    @property
-    def id_from_uidb64(self):
-        """
-        :return: The user’s id from encoded base 64 equivalent.
-        """
-        return int(encoding.force_str(self.uidb64))
-
-    @property
     def device_ip(self):
         return self.__DEVICE_IP
 
     @device_ip.setter
     def device_ip(self, value):
         self.__DEVICE_IP = value
-
-    @property
-    def device_id(self):
-        return self.__DEVICE_ID
-
-    @device_id.setter
-    def device_id(self, value):
-        self.__DEVICE_ID = value
 
     @property
     def token(self):
@@ -286,8 +263,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     def request_verification(self, send_mail: bool = False):
         """
         Sends account verification email with verification code
-        :return: tuple of (`Token`, verification-code)
+        :return: tuple of (`Token`, verification-code). Token could be None if user's
+        already verified
         """
+        if self.is_verified:
+            return self.token, None
         length = XENTLY_AUTH.get('VERIFICATION_CODE_LENGTH', 6)
         # random verification code of `length`
         code = self.get_random_code(alpha_numeric=False, length=length)
@@ -379,8 +359,6 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def activate_account(self, security_question_answer):
         """
-        TODO: Test
-
         :param security_question_answer: raw answer to user's security question to be verified against
         database's answer for correctness (match)
         :return: tuple (Token, message) if user's account was activated successfully (Token, None) else
@@ -545,6 +523,9 @@ class SecurityQuestion(models.Model):
     class Meta:
         ordering = ('added_on',)
 
+    def __str__(self):
+        return self.question
+
 
 class Metadata(models.Model):
     """
@@ -567,15 +548,13 @@ class Metadata(models.Model):
     def save(self, *args, **kwargs):
         raw_code = self.verification_code
         raw_password = self.temporary_password
-        raw_security_question_answer = self.temporary_password
         if valid_str(raw_code):
             self.verification_code = self._hash_code(raw_code)
         if valid_str(raw_password):
             self.temporary_password = self._hash_code(raw_password)
-        # will set an unusable password if no answer will be provided
-        self.security_question_answer = self._hash_code(raw_security_question_answer)
         if self.security_question is None:
             self.security_question = default_security_question()
+        self.__reinitialize_security_answer()
         super(Metadata, self).save(*args, **kwargs)
 
     @property
@@ -601,10 +580,15 @@ class Metadata(models.Model):
         return self.__verify_this_against_other_code(self.security_question_answer, raw_answer)
 
     # noinspection PyUnresolvedReferences
-    def is_unusable_code(self, hash_code) -> bool:
+    def is_usable_code(self, hash_code) -> bool:
+        """
+        :param hash_code: string that should be checked for password usability
+        :return: True if `hash_code` evaluates to a usable `password` according to
+        `{user-model}.has_usable_password()`
+        """
         user = self.user
         user.password = hash_code
-        return not user.has_usable_password()
+        return user.has_usable_password()
 
     # noinspection PyUnresolvedReferences,PyProtectedMember
     def _hash_code(self, raw_code):
@@ -615,6 +599,22 @@ class Metadata(models.Model):
         user = self.user
         user.password = this
         return user.check_password(other)
+
+    # noinspection PyUnresolvedReferences
+    def __reinitialize_security_answer(self):
+        hashed_answer = self._hash_code(self.security_question_answer)
+        meta = self.user.metadata
+        if meta.security_question.usable:
+            # providing an answer only makes sense if the question being answered
+            # is ready to receive answers
+            if meta.security_question_answer != hashed_answer:
+                # answer was changed. Update
+                self.security_question_answer = hashed_answer
+        else:
+            # question is unusable
+            if not valid_str(self.security_question_answer):
+                # set an un-usable password for an unusable account
+                self.security_question_answer = hashed_answer
 
 
 class AccessLog(models.Model):
@@ -633,17 +633,6 @@ class AccessLog(models.Model):
         sign_out data in the same tuple/row(in a database table) since the two are mutually
         exclusive events
         """
-        if valid_str(self.sign_in_ip) is True and valid_str(self.sign_out_ip) is False:
-            # probably a sign in was done. Just update `time_signed_in` without updating `time_signed_out`
-            self.time_signed_in = timezone.now()
-            self.time_signed_out = None
-            self.sign_out_ip = None
-        if valid_str(self.sign_out_ip) is True and valid_str(self.sign_in_ip) is False:
-            # probably a sign out was done. Just update `time_signed_out` without updating `time_signed_in`
-            self.time_signed_out = timezone.now()
-            self.time_signed_in = None
-            self.sign_in_ip = None
-
         super(AccessLog, self).save(*args, **kwargs)
 
 

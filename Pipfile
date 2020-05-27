@@ -16,6 +16,7 @@ celery = "*"
 django-celery-results = "*"
 sphinx = "*"
 coverage = "*"
+setuptools = "*"
 
 [requires]
 python_version = "3.7"

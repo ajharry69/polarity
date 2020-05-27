@@ -1,24 +1,10 @@
-from datetime import timedelta
-
-from django.contrib.auth import get_user_model
-from django.utils import timezone
 from django.utils.datetime_safe import datetime
 from rest_framework.test import APITestCase
 
-from xauth.models import User, Metadata
+from xauth.models import User
+from xauth.tests import *
 from xauth.utils import enums
 from xauth.utils.settings import DATE_INPUT_FORMAT
-
-
-def _update_metadata(user, tp_gen_time: timedelta = None, vc_gen_time: timedelta = None):
-    meta = Metadata.objects.get_or_create(user=user)[0]
-    if tp_gen_time is not None:
-        meta.tp_gen_time = timezone.now() + (tp_gen_time if tp_gen_time is not None else timedelta(seconds=0))
-    if vc_gen_time is not None:
-        meta.vc_gen_time = timezone.now() + (vc_gen_time if vc_gen_time is not None else timedelta(seconds=0))
-    meta.save()
-
-    return meta
 
 
 class UserTestCase(APITestCase):
@@ -57,6 +43,18 @@ class UserTestCase(APITestCase):
             self.assertIsNone(token1)
             self.assertIsNotNone(message1)
             self.assertEqual(message1, error_message)
+
+    def create_user_with_security_question(self, correct_fav_color):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        user.is_verified = True
+        user.is_active = False
+        user.save(auto_hash_password=False)
+        # updates user's metadata
+        meta = update_metadata(user, sec_quest=self.security_quest, sec_ans=correct_fav_color)
+        return meta, user
+
+    def setUp(self) -> None:
+        self.security_quest = create_security_question()
 
     def test_get_full_name_returns_username_if_neither_names_are_provided(self):
         """
@@ -228,7 +226,7 @@ class UserTestCase(APITestCase):
 
         # adjust temporary password's expiry date
         tp_gen_time = timedelta(minutes=-30, seconds=-1)
-        _update_metadata(user, tp_gen_time=tp_gen_time)
+        update_metadata(user, tp_gen=tp_gen_time)
         self.password_reset_error(user, new_password, 'expired', correct_password, incorrect_password)
 
     def test_reset_password_with_incorrect_unexpired_password_returns_None_token_and_incorrect_message(self):
@@ -267,7 +265,7 @@ class UserTestCase(APITestCase):
 
         # adjust temporary password's expiry date
         vc_gen_time = timedelta(hours=-1, seconds=-1)
-        _update_metadata(user, vc_gen_time=vc_gen_time)
+        update_metadata(user, vc_gen=vc_gen_time)
         self.account_verification_error(user, 'expired', correct_code, incorrect_code)
 
     def test_verify_with_incorrect_unexpired_code_returns_None_token_and_incorrect_message(self):
@@ -292,6 +290,30 @@ class UserTestCase(APITestCase):
         # make sure users password was not changed in the process
         self.assertIs(user.check_password(password), True)
 
+    def test_request_verification_with_a_verified_user_returns_Token_and_None_code(self):
+        password = 'password'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', password=password)
+        user.is_verified = True
+        user.save(auto_hash_password=False)
+        token, code = user.request_verification(send_mail=False)
+
+        self.assertIs(user.is_verified, True)
+        self.assertIsNone(code)
+        self.assertIsNotNone(token)
+        self.assertIs(user.check_password(password), True)
+
+    def test_verifying_a_verified_user_returns_Token_and_None_message(self):
+        password = 'password'
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', password=password)
+        user.is_verified = True
+        user.save(auto_hash_password=False)
+        token, message = user.verify('123456')
+
+        self.assertIs(user.is_verified, True)
+        self.assertIsNone(message)
+        self.assertIsNotNone(token)
+        self.assertIs(user.check_password(password), True)
+
     def test_age_with_null_date_of_birth_returns_zero(self):
         user = get_user_model().objects.create_user(email='user@mail-domain.com', date_of_birth=None)
         user1 = get_user_model().objects.create_user(email='user1@mail-domain.com', date_of_birth='')
@@ -314,3 +336,37 @@ class UserTestCase(APITestCase):
         dob = (datetime.now() + timedelta(days=-8395)).strftime(DATE_INPUT_FORMAT)
         user = get_user_model().objects.create_user(email='user@mail-domain.com', date_of_birth=dob)
         self.assertEqual(user.age(unit='invalid'), 8395)
+
+    def test_activate_account_an_active_user_returns_Token_and_None_message(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', username='user123', )
+        token, message = user.activate_account('does-not-matter')
+
+        self.assertIs(user.is_active, True)
+        self.assertIsNone(message)
+        self.assertIsNotNone(token)
+
+    def test_activate_account_with_incorrect_security_question_answer_returns_Non_None_message(self):
+        correct_fav_color = 'blue'
+        meta, user = self.create_user_with_security_question(correct_fav_color)
+        token, message = user.activate_account('white')
+
+        self.assertIs(user.is_active, False)
+        self.assertEqual(message, 'incorrect')
+        self.assertIsNone(token)
+        self.assertIs(meta.check_security_question_answer(correct_fav_color), True)
+
+    def test_activate_account_with_correct_security_question_answer_returns_Token(self):
+        correct_fav_color = 'blue'
+        meta, user = self.create_user_with_security_question(correct_fav_color)
+        token, message = user.activate_account(correct_fav_color)
+
+        self.assertIs(user.is_active, True)
+        self.assertIsNone(message)
+        self.assertIsNotNone(token)
+        self.assertIs(meta.check_security_question_answer(correct_fav_color), True)
+
+    def test_is_newbie(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', surname='User')
+
+        self.assertEqual(user.is_newbie(), True)
+        self.assertEqual(str(user), user.get_full_name())

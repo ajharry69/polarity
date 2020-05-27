@@ -155,6 +155,8 @@ XENTLY_AUTH = {
     'POST_REQUEST_USERNAME_FIELD': 'username',
     'POST_REQUEST_PASSWORD_FIELD': 'password',
     'ENFORCE_ACCOUNT_VERIFICATION': True,
+    # 0 = both(encrypted&non-encrypted),1 = encrypted only, 2 = non-encrypted only
+    'RETURN_TOKEN_TYPE': 0,  # TODO: Use
 }
 
 CELERY_BROKER_URL = 'pyamqp://guest@localhost//'
