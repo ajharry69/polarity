@@ -1,5 +1,3 @@
-from rest_framework.test import APITestCase
-
 from xauth.tests import *
 
 

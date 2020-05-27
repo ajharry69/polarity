@@ -113,8 +113,10 @@ discard or ignore this email.</{e}>"""
         """
 
         try:
-            send_mail_async.delay(subject, body.plain, body.formatted, address.recipients, address.sender,
-                                  address.reply_to)
+            x = 1 + 1
+            # TODO: Send mail...
+            # send_mail_async.delay(subject, body.plain, body.formatted, address.recipients, address.sender,
+            #                       address.reply_to)
         except socket.gaierror:
             pass
         except smtplib.SMTPException:
