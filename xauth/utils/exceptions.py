@@ -3,6 +3,7 @@ import re
 from django.utils.datetime_safe import datetime
 from rest_framework import views, response as drf_response
 
+from xauth.utils import valid_str
 from xauth.utils.response import APIResponse
 
 
@@ -65,8 +66,13 @@ def xauth_exception_handler(exception, context):
 
 
 def wrap_error_response(ed, response):
-    msg, d_msg, delimiter = ed, None, '#'
+    msg, d_msg, metadata, delimiter = ed, None, None, '#'
     if delimiter in ed:
         msg, d_msg = tuple(ed.split(delimiter, 1))
-    return APIResponse(message=msg, debug_message=text_with_dated_timestamps(d_msg),
-                       status_code=response.status_code)
+        if delimiter in d_msg:
+            d_msg, metadata = tuple(d_msg.split(delimiter, 1))
+    msg = msg if valid_str(msg) else None
+    d_msg = d_msg if valid_str(d_msg) else None
+    metadata = metadata if valid_str(metadata) else None
+    return APIResponse(message=msg, status_code=response.status_code, debug_message=text_with_dated_timestamps(d_msg),
+                       metadata=metadata, )

@@ -1,4 +1,4 @@
-from django.db.models import F
+from django.db.models import F, Count
 from django.http import HttpResponseRedirect
 from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
@@ -16,7 +16,6 @@ class IndexView(generic.ListView):
         :return: the last 5 published questions with at least one choice provided(not including those published in the
         future)
         """
-        from django.db.models import Count
         return Question.objects.annotate(
             choices_count=Count('choice')
         ).filter(

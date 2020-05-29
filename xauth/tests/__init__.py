@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from xauth.models import Metadata, SecurityQuestion
+from xauth.models import Metadata, SecurityQuestion, FailedSignInAttempt, PasswordResetLog
 
 
 def create_user(username):
@@ -29,6 +29,24 @@ def update_metadata(user, sec_quest=None, sec_ans=None, tpass=None, vcode=None, 
 
 def create_security_question(question: str = 'What is your favourite color?', usable: bool = True):
     return SecurityQuestion.objects.create(question=question, usable=usable)
+
+
+def create_failed_signin_attempt(user, count: int = 1):
+    attempt, created = FailedSignInAttempt.objects.get_or_create(user=user)
+    attempt.attempt_count = count
+    attempt.save()
+    return attempt
+
+
+def create_password_reset_log(user, change_times: list):
+    """
+    :param user: for which the log is attached to
+    :param change_times: list of `timedelta`s
+    """
+    for ct in change_times:
+        log, created = PasswordResetLog.objects.get_or_create(user=user)
+        log.change_time = timezone.now() + ct
+        log.save()
 
 
 class UserAPITestCase(APITestCase):

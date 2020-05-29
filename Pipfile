@@ -17,6 +17,7 @@ django-celery-results = "*"
 sphinx = "*"
 coverage = "*"
 setuptools = "*"
+timeago = "*"
 
 [requires]
 python_version = "3.7"

@@ -1,3 +1,4 @@
+from django.test import override_settings
 from django.utils.datetime_safe import datetime
 
 from xauth.models import User
@@ -369,3 +370,77 @@ class UserTestCase(APITestCase):
 
         self.assertEqual(user.is_newbie(), True)
         self.assertEqual(str(user), user.get_full_name())
+
+    def test_get_last_password_change_message(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        user1 = get_user_model().objects.create_user(email='user1@mail-domain.com', )
+
+        cts = [timedelta(days=-365), timedelta(hours=-3), timedelta(minutes=-3), ]
+        cts1 = [timedelta(days=-365), timedelta(weeks=-4, days=-3), ]
+
+        create_password_reset_log(user, cts)
+        create_password_reset_log(user1, cts1)
+
+        message = user.get_last_password_change_message()
+        message1 = user1.get_last_password_change_message()
+        self.assertEqual(message, '3 minutes ago')
+        self.assertEqual(message1, '1 month ago')
+
+    def test_get_last_password_change_message_with_no_existing_log(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        message = user.get_last_password_change_message()
+        self.assertIsNone(message, 'password has never been changed')
+
+    @override_settings(XAUTH={'MAXIMUM_SIGN_IN_ATTEMPTS': 5, }, )
+    def test_get_remaining_signin_attempts_with_no_existing_log(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        rem_attempts = user.get_remaining_signin_attempts()
+        self.assertEqual(rem_attempts, -1)
+
+    @override_settings(XAUTH={'MAXIMUM_SIGN_IN_ATTEMPTS': 5, }, )
+    def test_get_remaining_signin_attempts_with_attempt_count_standing_at_2_returns_3(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        create_failed_signin_attempt(user, 2)
+        rem_attempts = user.get_remaining_signin_attempts()
+        self.assertEqual(rem_attempts, 3)
+
+    @override_settings(XAUTH={'MAXIMUM_SIGN_IN_ATTEMPTS': 5, }, )
+    def test_update_signin_attempts_with_failed_set_to_True_without_existing_logs(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        rem_attempts = user.update_signin_attempts(failed=True)
+        self.assertEqual(rem_attempts, 4)
+
+    @override_settings(XAUTH={'MAXIMUM_SIGN_IN_ATTEMPTS': 5, }, )
+    def test_update_signin_attempts_with_failed_set_to_True_with_existing_logs(self):
+        """total count of existing log is 2"""
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        create_failed_signin_attempt(user, 2)
+        rem_attempts = user.update_signin_attempts(failed=True)  # will add one more failed attempt
+        self.assertEqual(rem_attempts, 2)
+
+    @override_settings(XAUTH={'MAXIMUM_SIGN_IN_ATTEMPTS': 5, }, )
+    def test_update_signin_attempts_with_failed_set_to_False_without_existing_logs(self):
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        rem_attempts = user.update_signin_attempts(failed=False)
+        self.assertEqual(rem_attempts, -1)
+
+    @override_settings(XAUTH={'MAXIMUM_SIGN_IN_ATTEMPTS': 5, }, )
+    def test_update_signin_attempts_with_failed_set_to_False_with_existing_logs(self):
+        """total count of existing log is 2"""
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        create_failed_signin_attempt(user, 2)
+        rem_attempts = user.update_signin_attempts(failed=False)  # will add one more failed attempt
+        self.assertEqual(rem_attempts, -1)
+
+    @override_settings(XAUTH={'MAXIMUM_SIGN_IN_ATTEMPTS': 5, }, )
+    def test_user_account_is_deactivated_upon_sign_in_attempts_exhaustion(self):
+        """total count of existing log is 4"""
+        email = 'user@mail-domain.com'
+        user = get_user_model().objects.create_user(email=email, )
+        create_failed_signin_attempt(user, 4)
+        # simulates another failed sign-in attempt that'll result in 5 failed attempts upon recording
+        rem_attempts = user.update_signin_attempts(failed=True)  # will add one more failed attempt
+
+        user = get_user_model().objects.get_by_natural_key(username=email)
+        self.assertIs(user.is_active, False)
+        self.assertEqual(rem_attempts, 0)

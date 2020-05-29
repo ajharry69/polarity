@@ -43,8 +43,8 @@ def get_204_wrapped_response(r: drf_response.Response):
 
 def get_wrapped_response(r: drf_response.Response):
     from .response import APIResponse
-    from .settings import XENTLY_AUTH
-    if XENTLY_AUTH.get('WRAP_DRF_RESPONSE', True):
+    from .settings import XAUTH
+    if XAUTH.get('WRAP_DRF_RESPONSE', True):
         debug_message, message, payload, response_data, response_status_code = None, None, None, r.data, r.status_code
         if isinstance(response_data, str):
             message = response_data

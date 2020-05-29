@@ -155,6 +155,9 @@ XAUTH = {
     'POST_REQUEST_USERNAME_FIELD': 'username',
     'POST_REQUEST_PASSWORD_FIELD': 'password',
     'ENFORCE_ACCOUNT_VERIFICATION': True,
+    # attempts upon which account is to be deactivated after failed sign-in attempts is reached.
+    # 0 or less means no limit
+    'MAXIMUM_SIGN_IN_ATTEMPTS': 0,
     # 0 = both(encrypted&non-encrypted),1 = encrypted only, 2 = non-encrypted only
     'RETURN_TOKEN_TYPE': 0,  # TODO: Use
 }

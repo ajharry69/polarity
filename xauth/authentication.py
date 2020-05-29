@@ -1,4 +1,5 @@
 import base64
+import binascii
 import re
 
 from django.contrib.auth import get_user_model
@@ -110,13 +111,18 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
             if valid_str(username) and valid_str(password):
                 user = get_user_model().objects.get_by_natural_key(username)
                 if user.check_password(raw_password=password) is False:
-                    # todo: log user's failed sign-in attempt
                     # user was found but password does not match
-                    raise drf_exception.AuthenticationFailed('invalid username and/or password')
+                    # log user's failed sign-in attempt
+                    password_change_message = user.get_last_password_change_message(locale='en')
+                    remaining_attempts = user.update_signin_attempts(failed=True)
+                    message = f'invalid username and/or password##{remaining_attempts}#{password_change_message}'
+                    raise drf_exception.AuthenticationFailed(message)
             else:
                 return None
         except get_user_model().DoesNotExist as ex:
             raise drf_exception.AuthenticationFailed(f'user not found#{ex.args[0]}')
+        # sign-in was a success. Reset sign-in attempts to zero
+        user.update_signin_attempts(failed=False, )
         return user
 
     @staticmethod
@@ -128,7 +134,6 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
         :param credentials: the Base64 encoding of ID and password joined by a single colon
         :return: tuple
         """
-        import binascii
         try:
             auth_data = base64.b64decode(credentials, validate=True).decode().split(':')
             return auth_data[0], auth_data[1]
@@ -145,8 +150,8 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
         """
         try:
             post, request_data = request.POST, request.data
-            _un_key = settings.XENTLY_AUTH.get('POST_REQUEST_USERNAME_FIELD', 'username')
-            _pw_key = settings.XENTLY_AUTH.get('POST_REQUEST_PASSWORD_FIELD', 'password')
+            _un_key = settings.XAUTH.get('POST_REQUEST_USERNAME_FIELD', 'username')
+            _pw_key = settings.XAUTH.get('POST_REQUEST_PASSWORD_FIELD', 'password')
 
             if isinstance(request_data, dict):
                 # check key count 2
