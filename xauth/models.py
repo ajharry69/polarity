@@ -30,7 +30,7 @@ def get_settings_max_signin_attempts():
 
 
 def default_security_question():
-    return SecurityQuestion.objects.first()
+    return SecurityQuestion.objects.order_by('id').first()
 
 
 class UserManager(BaseUserManager):
@@ -112,7 +112,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     # Contains a tuple of fields that are "safe" to access publicly with proper
     # caution taken for modification
-    READ_ONLY_FIELDS = ('id', 'is_superuser', 'is_staff', 'is_verified', 'created_at',)
+    READ_ONLY_FIELDS = ('id', 'is_superuser', 'is_staff', 'is_verified',)
 
     WRITE_ONLY_FIELDS = ('password',)
 
@@ -129,7 +129,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.get_full_name()
 
     def __repr__(self):
-        return json.dumps(self._jsonified())
+        return json.dumps(self.token_payload())
 
     def save(self, auto_hash_password=__AUTO_HASH, *args, **kwargs):
         """
@@ -228,9 +228,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         :return: verification token if user's account was not verified(self.is_verified=False) already
         otherwise full-access token is returned
         """
+        if not self.is_active:
+            return self.activation_token
         expiry = XAUTH.get('TOKEN_EXPIRY', timedelta(days=60))
         requires_verification = not self.is_verified and self.__ENFORCE_ACCOUNT_VERIFICATION
-        return self.verification_token if requires_verification else Token(self._jsonified(), expiry_period=expiry)
+        return self.verification_token if requires_verification else Token(self.token_payload(), expiry_period=expiry)
 
     @property
     def password_reset_token(self):
@@ -238,7 +240,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         :return: dict of containing pair of encrypted and unencrypted(normal) token for password reset
         """
         expiry = XAUTH.get('TEMPORARY_PASSWORD_EXPIRY', timedelta(minutes=30))
-        return Token(self._jsonified(), expiry_period=expiry)
+        return Token(self.token_payload(), expiry_period=expiry, subject='password-reset', )
 
     @property
     def verification_token(self):
@@ -247,7 +249,16 @@ class User(AbstractBaseUser, PermissionsMixin):
         verification
         """
         expiry = XAUTH.get('VERIFICATION_CODE_EXPIRY', timedelta(hours=1))
-        return Token(self._jsonified(), expiry_period=expiry)
+        return Token(self.token_payload(), expiry_period=expiry, subject='account-verification', )
+
+    @property
+    def activation_token(self):
+        """
+        :return: dict of containing pair of encrypted and unencrypted(normal) token for user account
+        activation
+        """
+        expiry = XAUTH.get('ACCOUNT_ACTIVATION_TOKEN_EXPIRY', timedelta(days=1))
+        return Token(self.token_payload(), expiry_period=expiry, subject='account-activation', )
 
     def request_password_reset(self, send_mail: bool = True):
         """
@@ -394,6 +405,20 @@ class User(AbstractBaseUser, PermissionsMixin):
         except Metadata.DoesNotExist:
             return None, 'security question not found'
 
+    def add_security_question(self, question, answer):
+        """
+        Adds a security question to user's account
+
+        :param question: instance of `SecurityQuestion`
+        :param answer: answer to the question
+        :return: bool. True if question was added successfully and False otherwise
+        """
+        metadata, created = Metadata.objects.get_or_create(user=self, )
+        metadata.security_question = question
+        metadata.security_question_answer = answer
+        metadata.save(update_fields=['security_question', 'security_question_answer', ])
+        return True
+
     def send_email(self, subject, body: Mail.Body):
         sender_address = XAUTH.get('ACCOUNTS_EMAIL')
         reply_addresses = XAUTH.get('REPLY_TO_ACCOUNTS_EMAIL_ADDRESSES')
@@ -532,7 +557,10 @@ class User(AbstractBaseUser, PermissionsMixin):
             rand = User.objects.make_random_password(length=length, allowed_chars='23456789')
         return rand
 
-    def _jsonified(self):
+    def token_payload(self) -> dict:
+        """
+        :return: dict of data that is attached to JWT token as payload
+        """
         data = {}
         for f in self.PUBLIC_READ_WRITE_FIELDS:
             val = getattr(self, f, None)
@@ -632,6 +660,9 @@ class Metadata(models.Model):
             self.temporary_password = self._hash_code(raw_password)
         self.__reinitialize_security_answer()
         super(Metadata, self).save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.security_question}'
 
     @property
     def is_verification_code_expired(self):

@@ -1,5 +1,3 @@
-from rest_framework.test import APITestCase
-
 from xauth.tests import *
 
 
@@ -50,6 +48,8 @@ class MetadataTestCase(APITestCase):
         meta = update_metadata(self.user, vcode=code, vc_gen=vc_gen)
 
         self.assertIs(meta.is_verification_code_expired, False)
+        # string equivalent of a user's metadata object equal to the answer to security question
+        self.assertEqual(str(meta), str(meta.security_question.question))
 
     def test_default_security_question_is_usable_returns_False(self):
         meta = update_metadata(self.user)

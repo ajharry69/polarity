@@ -9,6 +9,12 @@ from xauth.utils.settings import DATE_INPUT_FORMAT
 
 class UserTestCase(APITestCase):
 
+    def assert_activation_token_default_expiry(self, token):
+        exp_value = token.claims.get('exp', 0)
+        default_activation_date_seconds = int(datetime.now().strftime('%s'))
+        self.assertGreaterEqual(exp_value, default_activation_date_seconds)
+        self.assertEqual(int((exp_value - default_activation_date_seconds) / (60 * 60)), 24)
+
     def verification_or_reset_succeeded(self, message, token):
         self.assertIsNotNone(token)
         self.assertIsNone(message)
@@ -153,6 +159,17 @@ class UserTestCase(APITestCase):
 
         self.assertGreaterEqual(exp_value, default_activation_date_seconds)
         self.assertEqual(int((exp_value - default_activation_date_seconds) / (60 * 60)), 1)
+
+    def test_activation_token_expires_after_1_day_by_default(self):
+        user = get_user_model().objects.create(email='user@mail-domain.com', )
+        token = user.activation_token
+        self.assert_activation_token_default_expiry(token)
+
+    def test_activation_token_is_always_returned_for_in_active_users(self):
+        user = get_user_model().objects.create(email='user@mail-domain.com', )
+        user.is_active = False  # would result to an activation token being returned
+        token = user.token
+        self.assert_activation_token_default_expiry(token)
 
     def test_password_reset_token_expires_after_30_minutes_by_default(self):
         user = get_user_model().objects.create(email='user@mail-domain.com', )
@@ -444,3 +461,21 @@ class UserTestCase(APITestCase):
         user = get_user_model().objects.get_by_natural_key(username=email)
         self.assertIs(user.is_active, False)
         self.assertEqual(rem_attempts, 0)
+
+    def test_add_security_question(self):
+        """
+        Security question and it's answer is successfully attached to a users account
+        """
+        user = get_user_model().objects.create_user(email='user@mail-domain.com', )
+        questions = add_security_questions()
+        question, answer = SecurityQuestion.objects.get(question=questions[0]), "blue"
+        added = user.add_security_question(question, answer=answer)
+
+        metadata = Metadata.objects.get(user=user)
+
+        # question was added
+        self.assertIs(added, True)
+        # question is the same as one present in the database
+        self.assertEqual(metadata.security_question_id, question.id)
+        # answer to the question in database matches the provided answer
+        self.assertIs(metadata.check_security_question_answer(answer), True)

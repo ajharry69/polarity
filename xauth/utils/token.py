@@ -164,11 +164,12 @@ class Token(TokenKey):
     __TOKEN_ENCRYPTED = settings.XAUTH.get('REQUEST_TOKEN_ENCRYPTED', True)
 
     def __init__(self, payload, activation_date: datetime = None, expiry_period: timedelta = None,
-                 payload_key: str = 'payload', signing_algorithm=JWT_SIG_ALG):
+                 payload_key: str = 'payload', signing_algorithm=JWT_SIG_ALG, subject=None, ):
         password = settings.XAUTH.get('TOKEN_KEY', force_str(settings.SECRET_KEY))
         super().__init__(password=password, signing_algorithm=signing_algorithm)
         self._normal = None
         self._encrypted = None
+        self.subject = subject if subject else 'res-man'  # resource manipulation
         self.payload = payload
         self.payload_key = payload_key
         self.activation_date = activation_date
@@ -217,6 +218,7 @@ class Token(TokenKey):
             'nbf': activation_secs,
             'exp': expiry_secs,
             'iat': int(issue_date.strftime('%s')),
+            'sub': self.subject,
         }
 
     @property

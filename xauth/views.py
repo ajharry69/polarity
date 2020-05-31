@@ -1,12 +1,14 @@
 import re
 
 from django.contrib.auth.models import AnonymousUser
+from django.db.models import Q
 from rest_framework import permissions, generics, views, status, viewsets
 from rest_framework.response import Response
 
+from .models import Metadata
 from .permissions import *
 from .serializers import *
-from .utils import get_204_wrapped_response, get_wrapped_response
+from .utils import get_204_wrapped_response, get_wrapped_response, valid_str
 
 
 class SecurityQuestionView(viewsets.ModelViewSet):
@@ -33,7 +35,7 @@ class ProfileView(generics.RetrieveUpdateDestroyAPIView):
         return get_204_wrapped_response(super().delete(request, *args, **kwargs))
 
     def perform_update(self, serializer):
-        serializer.save(auto_hash_password=False)  # TODO: seem to be having no effect
+        serializer.save(auto_hash_password=False)
 
 
 class SignUpView(generics.CreateAPIView):
@@ -47,26 +49,27 @@ class SignUpView(generics.CreateAPIView):
 
 class SignInView(views.APIView):
     permission_classes = [permissions.IsAuthenticated, ]
+    serializer_class = AuthSerializer
 
-    @staticmethod
-    def post(request, format=None):
+    def post(self, request, format=None):
         # authentication logic is by default handled by the auth-backend
-        serializer = AuthSerializer(request.user, context={'request': request}, )
+        serializer = self.serializer_class(request.user, context={'request': request}, )
         return get_wrapped_response(Response(serializer.data, status=status.HTTP_200_OK))
 
 
-class VerificationCodeSendView(views.APIView):
+class VerificationCodeRequestView(views.APIView):
     permission_classes = [permissions.IsAuthenticated, ]
+    serializer_class = AuthTokenOnlySerializer
 
     def post(self, request, format=None):
         user = request.user
         # new verification code resend or request is been made
         token, code = user.request_verification(send_mail=True)
-        response = Response(AuthTokenOnlySerializer(user, ).data, status=status.HTTP_200_OK)
+        response = Response(self.serializer_class(user, ).data, status=status.HTTP_200_OK)
         return get_wrapped_response(response)
 
 
-class VerificationCodeVerifyView(VerificationCodeSendView):
+class VerificationCodeVerifyView(VerificationCodeRequestView):
     """
     Attempts to verify authenticated user's verification code(retrieved from a POST request using
     'code' as key).
@@ -91,15 +94,16 @@ class VerificationCodeVerifyView(VerificationCodeSendView):
             token, message = user.verify(code=code)
             if token is not None:
                 # verification was successful
-                data, status_code = AuthTokenOnlySerializer(user, ).data, None
+                data, status_code = self.serializer_class(user, ).data, None
             else:
                 data, status_code = {'error': message}, status.HTTP_400_BAD_REQUEST
         response = Response(data, status=status_code if status_code else status.HTTP_200_OK)
         return get_wrapped_response(response)
 
 
-class PasswordResetSendView(views.APIView):
+class PasswordResetRequestView(views.APIView):
     permission_classes = [permissions.AllowAny, ]
+    serializer_class = AuthTokenOnlySerializer
 
     @staticmethod
     def post(request, format=None):
@@ -116,7 +120,7 @@ class PasswordResetSendView(views.APIView):
         return get_wrapped_response(Response(data, status=status_code))
 
 
-class PasswordResetView(PasswordResetSendView):
+class PasswordResetView(PasswordResetRequestView):
     """
     Attempts to reset(change) authenticated user's password(retrieved from a POST request using
     `temporary_password` as key).
@@ -145,7 +149,95 @@ class PasswordResetView(PasswordResetSendView):
             token, message = user.reset_password(temporary_password=t_pass, new_password=n_pass)
             if token is not None:
                 # password reset was successful
-                data, status_code = AuthTokenOnlySerializer(user, ).data, None
+                data, status_code = self.serializer_class(user, ).data, None
+            else:
+                data, status_code = {'error': message}, status.HTTP_400_BAD_REQUEST
+        response = Response(data, status=status_code if status_code else status.HTTP_200_OK)
+        return get_wrapped_response(response)
+
+
+class AddSecurityQuestionView(views.APIView):
+    """
+    Attaches users selected security question and the corresponding answer
+    """
+    permission_classes = [permissions.IsAuthenticated, ]
+
+    @staticmethod
+    def post(request, format=None):
+        user, data = request.user, request.data
+        # question can be identified by the question text itself or it's id both of which are
+        # expected to be unique
+        answer = data.get('answer', data.get('question_answer', None))
+        question_id = data.get('question', data.get('id', data.get('question_id', None)))
+        question = SecurityQuestion.objects.filter(Q(question=question_id) | Q(id=question_id)).first()
+        if question and valid_str(answer):
+            # question was found and answer is a valid string
+            user.add_security_question(question, answer)
+            data, status_code = {'success': 'security question added successfully'}, status.HTTP_200_OK
+        else:
+            data = {'error': f"invalid {'answer' if question else 'question'}"}
+            data, status_code = data, status.HTTP_400_BAD_REQUEST
+        response = Response(data, status=status_code if status_code else status.HTTP_200_OK)
+        return get_wrapped_response(response)
+
+
+class AccountActivationRequestView(views.APIView):
+    """
+    Provides a user with possible account activation methods provided a correct account
+    `username` is supplied as part of a POST request.
+    """
+    permission_classes = [permissions.AllowAny, ]
+    serializer_class = AuthTokenOnlySerializer
+
+    def post(self, request, format=None):
+        username = request.data.get('username', None)
+        user = request.user
+        is_valid_user = user and not isinstance(user, AnonymousUser)
+        user = user if is_valid_user else get_user_model().objects.filter(
+            Q(username=username) | Q(email=username),
+        ).first()
+        if user:
+            # account activation methods. Only include `security_question` if user has a valid question attached to
+            # his/her account
+            metadata = ['creation_date', ] + (['security_question'] if self.has_valid_security_question(user) else [])
+            data = self.serializer_class(user, context={'request': request}, ).data
+            data = {'payload': data, 'metadata': metadata, }
+            data, status_code = data, status.HTTP_200_OK
+        else:
+            data = {'error': 'username or email address is not registered', }
+            data, status_code = data, status.HTTP_404_NOT_FOUND
+        return get_wrapped_response(Response(data, status=status_code))
+
+    @staticmethod
+    def has_valid_security_question(user) -> bool:
+        """Returns True if security question attached to user's account is usable(valid) or False"""
+        try:
+            metadata = Metadata.objects.get(user=user, )
+            return True if metadata.security_question.usable else False
+        except Metadata.DoesNotExist:
+            return False
+
+
+class AccountActivationView(AccountActivationRequestView):
+    """
+    Activates a user's account when provided by a correct `answer` in a POST request with a `answer` as key.
+    """
+    permission_classes = [permissions.IsAuthenticated, ]
+
+    def post(self, request, format=None):
+        user, data = request.user, request.data
+        operation = request.query_params.get('operation', 'activate').lower()
+        if re.match('^request$', operation):
+            # probably a new request for password reset
+            # get username to resend the email
+            return super().post(request, format)
+        else:
+            # answer is expected to either be an estimate of account creation date or an answer to security question
+            answer = data.get('answer', None)
+            token, message = user.activate_account(security_question_answer=answer)
+            if token is not None:
+                # account activation was successful
+                data, status_code = self.serializer_class(user, ).data, None
             else:
                 data, status_code = {'error': message}, status.HTTP_400_BAD_REQUEST
         response = Response(data, status=status_code if status_code else status.HTTP_200_OK)

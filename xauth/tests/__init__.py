@@ -31,6 +31,22 @@ def create_security_question(question: str = 'What is your favourite color?', us
     return SecurityQuestion.objects.create(question=question, usable=usable)
 
 
+def add_security_questions(questions=None):
+    """
+    :param questions: list of questions
+    :return: list of added question texts
+    """
+    questions = questions if questions else ["What's your favorite color?", "What's your mothers maiden name?"]
+    for q in questions:
+        create_security_question(question=q)
+    return questions
+
+
+def get_or_create_security_question(question: str):
+    q, c = SecurityQuestion.objects.get_or_create(question=question)
+    return q
+
+
 def create_failed_signin_attempt(user, count: int = 1):
     attempt, created = FailedSignInAttempt.objects.get_or_create(user=user)
     attempt.attempt_count = count
@@ -91,3 +107,10 @@ class CodeVerificationAPITestCase(UserAPITestCase):
         token_expiry = token.get_claims(encrypted_token, encrypted=True, ).get('exp', 0)
         token_expiry_days = int((token_expiry - int(datetime.now().strftime('%s'))) / (60 * 60 * 24))
         return token_expiry_days, user
+
+
+class SecurityQuestionAPITestCase(UserAPITestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.security_questions = add_security_questions()
+        self.security_question = get_or_create_security_question(self.security_questions[0])
