@@ -1,5 +1,4 @@
 import base64
-import binascii
 import re
 
 from django.contrib.auth import get_user_model
@@ -149,11 +148,7 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
         :param credentials: the Base64 encoding of ID and password joined by a single colon
         :return: tuple
         """
-        try:
-            auth_data = base64.b64decode(credentials, validate=True).decode().split(':')
-            return auth_data[0], auth_data[1]
-        except (IndexError, binascii.Error):
-            return None, None
+        return tuple(base64.b64decode(credentials, validate=True).decode().split(':'))
 
     @staticmethod
     def get_post_request_username_and_password(request):
@@ -163,20 +158,17 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
         :param request `django.http.HttpRequest`
         :return: tuple of username and password i.e. (username, password)
         """
-        try:
-            post, request_data = request.POST, request.data
-            _un_key = settings.XAUTH.get('POST_REQUEST_USERNAME_FIELD', 'username')
-            _pw_key = settings.XAUTH.get('POST_REQUEST_PASSWORD_FIELD', 'password')
+        post, request_data = request.POST, request.data
+        _un_key = settings.XAUTH.get('POST_REQUEST_USERNAME_FIELD', 'username')
+        _pw_key = settings.XAUTH.get('POST_REQUEST_PASSWORD_FIELD', 'password')
 
-            if isinstance(request_data, dict):
-                # check key count 2
-                if len(request_data.keys()) == 2:
-                    # probably a POST request sign-in request
-                    username = post.get(_un_key, request_data.get(_un_key, None))
-                    password = post.get(_pw_key, request_data.get(_pw_key, None))
-                    return username, password
-        except AttributeError:
-            pass
+        if isinstance(request_data, dict):
+            # check key count 2
+            if len(request_data.keys()) == 2:
+                # probably a POST request sign-in request
+                username = post.get(_un_key, request_data.get(_un_key, None))
+                password = post.get(_pw_key, request_data.get(_pw_key, None))
+                return username, password
         return None, None
 
     @staticmethod
@@ -193,8 +185,7 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
             # addresses where provided, trim off spaces or double
             ip_addresses = re.sub(r'^,+|\s+,*|,+$', '', addresses_str).split(',')
             return ip_addresses[0] if len(ip_addresses) > 0 else ip_addresses
-        else:
-            return None
+        return None
 
     def __get_wrapped_authentication_response(self, addresses_str, user, auth, request_url):
         if not user:
@@ -202,5 +193,4 @@ class BasicTokenAuthentication(drf_auth.BaseAuthentication):
         if user.is_active or activation_ep in request_url:
             user.device_ip = self.get_client_ip(addresses_str)
             return user, auth
-        else:
-            raise drf_exception.AuthenticationFailed('the account is inactive')
+        raise drf_exception.AuthenticationFailed('account was deactivated')

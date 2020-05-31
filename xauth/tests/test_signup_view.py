@@ -8,7 +8,7 @@ class SignUpViewTestCase(APITestCase):
     username, email = 'user', 'user@mail-domain.com'
 
     def register_user(self, username, email, password):
-        return self.client.post(reverse('xauth:sign-up'), data={
+        return self.client.post(reverse('xauth:signup'), data={
             "username": username,
             "email": email,
             "provider": "EMAIL",  # TODO: Fix must be provided

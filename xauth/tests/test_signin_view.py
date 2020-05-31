@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 class SignInViewTestCase(APITestCase):
     def assert_post_request_auth(self, _username, _password, expect_status_code, expect_null_payload: bool = True):
-        response = self.client.post(reverse('xauth:sign-in'), data={
+        response = self.client.post(reverse('xauth:signin'), data={
             'username': _username,
             'password': _password,
         })
@@ -21,7 +21,7 @@ class SignInViewTestCase(APITestCase):
     def assert_basic_auth(self, _username, _password, expect_status_code, expect_null_payload: bool = True):
         from requests.auth import _basic_auth_str
         self.client.credentials(HTTP_AUTHORIZATION=_basic_auth_str(_username, _password))
-        response = self.client.post(reverse('xauth:sign-in'), )
+        response = self.client.post(reverse('xauth:signin'), )
         response_data = response.data
         self.assertEqual(response.status_code, expect_status_code)
         # may fail if WRAP_DRF_RESPONSE setting is set to False

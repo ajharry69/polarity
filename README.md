@@ -66,6 +66,7 @@ XAUTH = {
     'TEMPORARY_PASSWORD_LENGTH': 8,
     'VERIFICATION_CODE_EXPIRY': timedelta(hours=1),
     'TEMPORARY_PASSWORD_EXPIRY': timedelta(minutes=30),
+    'ACCOUNT_ACTIVATION_TOKEN_EXPIRY': timedelta(days=1),
     # period within which a user is considered new since account creation date
     'NEWBIE_VALIDITY_PERIOD': timedelta(days=1),
     'AUTO_HASH_PASSWORD_ON_SAVE': True,
@@ -74,7 +75,13 @@ XAUTH = {
     'POST_REQUEST_USERNAME_FIELD': 'username',
     'POST_REQUEST_PASSWORD_FIELD': 'password',
     'ENFORCE_ACCOUNT_VERIFICATION': True,
+    # attempts upon which account is to be deactivated after failed sign-in attempts is reached.
+    # 0 or less means no limit
+    'MAXIMUM_SIGN_IN_ATTEMPTS': 0,
+    'VERIFICATION_ENDPOINT': 'verification-code/verify/',
+    'PASSWORD_RESET_ENDPOINT': 'password-reset/verify/',
+    'ACTIVATION_ENDPOINT': 'activation/activate/',
     # 0 = both(encrypted&non-encrypted),1 = encrypted only, 2 = non-encrypted only
-    'RETURN_TOKEN_TYPE': 0,
+    'RETURN_TOKEN_TYPE': 0,  
 }
 ```

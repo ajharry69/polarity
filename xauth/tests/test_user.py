@@ -362,6 +362,11 @@ class UserTestCase(APITestCase):
         self.assertIsNone(message)
         self.assertIsNotNone(token)
 
+    def test_creating_superuser_without_password_raises_ValueError(self):
+        with self.assertRaises(ValueError):
+            user = get_user_model().objects.create_superuser(email='user@mail-domain.com', username='user123',
+                                                             password=None)
+
     def test_activate_account_with_incorrect_security_question_answer_returns_Non_None_message(self):
         correct_fav_color = 'blue'
         meta, user = self.create_user_with_security_question(correct_fav_color)

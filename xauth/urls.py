@@ -14,8 +14,9 @@ activation_ep = str(XAUTH.get('VERIFICATION_ENDPOINT', 'verification-code/verify
 app_name = 'xauth'
 urlpatterns = [
     path('', include(router.urls)),
-    path('sign-in/', view=views.SignInView.as_view(), name='sign-in'),
-    path('sign-up/', view=views.SignUpView.as_view(), name='sign-up'),
+    path('signout/', view=views.SignOutView.as_view(), name='signout'),
+    path('signin/', view=views.SignInView.as_view(), name='signin'),
+    path('signup/', view=views.SignUpView.as_view(), name='signup'),
     path('profile/<int:pk>/', view=views.ProfileView.as_view(), name='profile'),
     path(verification_ep, view=views.VerificationCodeVerifyView.as_view(), name='verification-code-verify'),
     path('verification-code/request/', view=views.VerificationCodeRequestView.as_view(), name='verification-code-send'),

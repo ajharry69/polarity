@@ -40,7 +40,7 @@ class BasicTokenAuthenticationTestCase(APITestCase):
         factory = APIRequestFactory()
         from xauth import views
         view = views.SignInView.as_view()
-        request = factory.post(reverse('xauth:sign-in'), data={
+        request = factory.post(reverse('xauth:signin'), data={
             'username': _username,
             'password': _password,
         })

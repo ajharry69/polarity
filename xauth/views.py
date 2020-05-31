@@ -1,5 +1,6 @@
 import re
 
+from django.contrib.auth import logout
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import Q
 from rest_framework import permissions, generics, views, status, viewsets
@@ -53,8 +54,22 @@ class SignInView(views.APIView):
 
     def post(self, request, format=None):
         # authentication logic is by default handled by the auth-backend
-        serializer = self.serializer_class(request.user, context={'request': request}, )
+        user = request.user
+        user.update_or_create_access_log(force_create=True)
+        serializer = self.serializer_class(user, context={'request': request}, )
         return get_wrapped_response(Response(serializer.data, status=status.HTTP_200_OK))
+
+
+class SignOutView(views.APIView):
+    permission_classes = [permissions.AllowAny, ]
+
+    @staticmethod
+    def post(request, format=None):
+        user = request.user
+        if user and not isinstance(user, AnonymousUser):
+            user.update_or_create_access_log()
+        logout(request)
+        return get_wrapped_response(Response({'success': 'signed out'}, status=status.HTTP_200_OK))
 
 
 class VerificationCodeRequestView(views.APIView):
@@ -211,11 +226,8 @@ class AccountActivationRequestView(views.APIView):
     @staticmethod
     def has_valid_security_question(user) -> bool:
         """Returns True if security question attached to user's account is usable(valid) or False"""
-        try:
-            metadata = Metadata.objects.get(user=user, )
-            return True if metadata.security_question.usable else False
-        except Metadata.DoesNotExist:
-            return False
+        metadata = Metadata.objects.filter(user=user, ).first()
+        return True if (metadata and metadata.security_question.usable) else False
 
 
 class AccountActivationView(AccountActivationRequestView):

@@ -1,12 +1,12 @@
 import json
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import timeago
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
 from django.db import models
 from django.utils import timezone
-from django.utils.datetime_safe import datetime as dj_datetime, date as dj_date
+from django.utils.datetime_safe import date as dj_date
 from django.utils.translation import gettext_lazy as _
 
 from .utils import enums, valid_str, reset_empty_nullable_to_null
@@ -325,29 +325,26 @@ class User(AbstractBaseUser, PermissionsMixin):
         :return: tuple (Token, message) if user's account was reset successfully (Token, None) else (None,
         Non-None-message)
         """
-        try:
-            metadata = Metadata.objects.get(pk=self.id)
-            if metadata.is_temporary_password_expired:
-                return None, 'expired'
-            if metadata.check_temporary_password(raw_password=temporary_password):
-                # temporary password matched(correct)
-                # update user's password
-                self.password = new_password
-                # prevent hashing of other irrelevant table column(s)
-                self.save(auto_hash_password=True, update_fields=['password'])
-                # reset temporary password & password generation time to None
-                metadata.temporary_password = None
-                metadata.tp_gen_time = None
-                # prevent hashing of other irrelevant table column(s)
-                metadata.save(update_fields=['temporary_password', 'tp_gen_time'])
-                # reflect the change to the logs
-                self.update_or_create_password_reset_log()
-                return self.token, None
-            else:
-                # temporary password mismatched(incorrect)
-                return None, 'incorrect'
-        except Metadata.DoesNotExist:
-            return None, 'user not found'
+        metadata, _ = Metadata.objects.get_or_create(pk=self.id)
+        if metadata.is_temporary_password_expired:
+            return None, 'expired'
+        if metadata.check_temporary_password(raw_password=temporary_password):
+            # temporary password matched(correct)
+            # update user's password
+            self.password = new_password
+            # prevent hashing of other irrelevant table column(s)
+            self.save(auto_hash_password=True, update_fields=['password'])
+            # reset temporary password & password generation time to None
+            metadata.temporary_password = None
+            metadata.tp_gen_time = None
+            # prevent hashing of other irrelevant table column(s)
+            metadata.save(update_fields=['temporary_password', 'tp_gen_time'])
+            # reflect the change to the logs
+            self.update_or_create_password_reset_log()
+            return self.token, None
+        else:
+            # temporary password mismatched(incorrect)
+            return None, 'incorrect'
 
     def verify(self, code):
         """
@@ -359,29 +356,26 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.is_verified:
             # no need of repeating the task
             return self.token, None
-        try:
-            metadata = Metadata.objects.get(pk=self.id)
-            if metadata.is_verification_code_expired:
-                return None, 'expired'
-            if metadata.check_verification_code(raw_code=code):
-                # verification code matched(correct)
-                # update user's verification status
-                self.is_verified = True
-                # prevent's automatic hashing of irrelevant password
-                self.save(auto_hash_password=False, update_fields=['is_verified'])
-                # reset verification code & code generation time to None
-                metadata.verification_code = None
-                metadata.vc_gen_time = None
-                # prevent hashing of other irrelevant table column(s)
-                metadata.save(update_fields=['verification_code', 'vc_gen_time'])
-                # user is assumed to have just signed-in since he/she can now access resources
-                self.update_or_create_access_log(force_create=True)
-                return self.token, None
-            else:
-                # verification code mismatched(incorrect)
-                return None, 'incorrect'
-        except Metadata.DoesNotExist:
-            return None, 'user not found'
+        metadata, _ = Metadata.objects.get_or_create(pk=self.id)
+        if metadata.is_verification_code_expired:
+            return None, 'expired'
+        if metadata.check_verification_code(raw_code=code):
+            # verification code matched(correct)
+            # update user's verification status
+            self.is_verified = True
+            # prevent's automatic hashing of irrelevant password
+            self.save(auto_hash_password=False, update_fields=['is_verified'])
+            # reset verification code & code generation time to None
+            metadata.verification_code = None
+            metadata.vc_gen_time = None
+            # prevent hashing of other irrelevant table column(s)
+            metadata.save(update_fields=['verification_code', 'vc_gen_time'])
+            # user is assumed to have just signed-in since he/she can now access resources
+            self.update_or_create_access_log(force_create=True)
+            return self.token, None
+        else:
+            # verification code mismatched(incorrect)
+            return None, 'incorrect'
 
     def activate_account(self, security_question_answer):
         """
@@ -392,18 +386,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         """
         if self.is_active:
             return self.token, None
-        try:
-            metadata = Metadata.objects.get(pk=self.id)
-            if metadata.check_security_question_answer(raw_answer=security_question_answer):
-                # answer was correct, activate account
-                self.is_active = True
-                self.save(auto_hash_password=False, update_fields=['is_active'])
-                return self.token, None
-            else:
-                # wrong answer
-                return None, 'incorrect'
-        except Metadata.DoesNotExist:
-            return None, 'security question not found'
+        metadata, _ = Metadata.objects.get_or_create(pk=self.id)
+        if metadata.check_security_question_answer(raw_answer=security_question_answer):
+            # answer was correct, activate account
+            self.is_active = True
+            self.save(auto_hash_password=False, update_fields=['is_active'])
+            return self.token, None
+        else:
+            # wrong answer
+            return None, 'incorrect'
 
     def add_security_question(self, question, answer):
         """
@@ -440,9 +431,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         if force_create is True:
             log = create(self)
         else:
-            logs = objects.filter(user=self, request_ip=self.device_ip, type=_type).order_by('-request_time')
-            if len(logs) > 0:
-                log = logs[0]
+            log = objects.filter(user=self, request_ip=self.device_ip, type=_type).order_by('-request_time').first()
+            if log:
                 log.change_ip = self.device_ip
                 log.change_time = timezone.now()
                 log.save()
@@ -467,9 +457,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         if force_create is True:
             log = create(self)
         else:
-            logs = objects.filter(user=self, sign_in_ip=self.device_ip, ).order_by('-sign_in_time')
-            if len(logs) > 0:
-                log = logs[0]
+            log = objects.filter(user=self, sign_in_ip=self.device_ip, ).order_by('-sign_in_time').first()
+            if log:
                 log.sign_out_ip = self.device_ip
                 log.sign_out_time = timezone.now()
                 log.save()
@@ -561,16 +550,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         """
         :return: dict of data that is attached to JWT token as payload
         """
-        data = {}
-        for f in self.PUBLIC_READ_WRITE_FIELDS:
-            val = getattr(self, f, None)
-            if isinstance(val, date) or isinstance(val, dj_date):
-                data[f] = val.isoformat()
-            elif isinstance(val, datetime) or isinstance(val, dj_datetime):
-                data[f] = val.isoformat()
-            else:
-                data[f] = val
-        return data
+        return {field: getattr(self, field, None) for field in self.PUBLIC_READ_WRITE_FIELDS}
 
     def _hash_code(self, raw_code):
         """
