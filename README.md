@@ -5,15 +5,22 @@
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/26f09088f70f46eda61633306b2147de)](https://app.codacy.com/manual/ajharry69/polarity?utm_source=github.com&utm_medium=referral&utm_content=ajharry69/polarity&utm_campaign=Badge_Grade_Dashboard)
 [![Documentation Status](https://readthedocs.org/projects/polarity/badge/?version=latest)](https://polarity.readthedocs.io/en/latest/?badge=latest)
 
-A [DRF](https://www.django-rest-framework.org/) -dependent [custom user model](https://docs.djangoproject.com/en/dev/topics/auth/customizing/) 
-based package that offers numerous features from JWT and Basic authentication to REST API end points for signup,signin,
-hashed verification-code based account activation and temporary password based password resetting e.t.c.
-
-Most of the package's features are designed to be independently usable and customizable to suit most needs.
+A [custom user model](https://docs.djangoproject.com/en/dev/topics/auth/customizing/) 
+based package that offers numerous features from JWT and Basic authentication to REST API end-points for signup,signin,
+email verification, password resetting and account activation.
+ 
+Email verification and password resetting are based on hashed verification-code and temporary password respectively. And 
+account activation is based on a combination of user selected security question(provided through the admin portal by site 
+administrator(superuser)) and an answer. For example, a user could configure **what is your favorite color?** security 
+question and provide **white** as an answer then in case a users account was deactivate he/she will be required to provide 
+the same answer to the same question to re-activate a his/her account.
 
 ## Classes dependency structure
 
 `TokenKey` > `Token` > `User` > `AuthenticationBackend` > `Serializer` > `View` > `url_patterns`
+
+Most of the package's features are designed to be independently usable and customizable to suit most needs.
+
 >**NOTE:** the  closer the dependency(use) get to the `url_patterns` the harder it becomes to extend and customize the 
 >classes and features before it's predecessor. For example, modifying a `Serializer` without modifying it's dependant 
 >`View` and still using unmodified `url_patterns` would most likely result in unexpected behaviour. But on the other 
